@@ -1,0 +1,6 @@
+{
+  "name": "LeadForge AI",
+  "description": "Encontre clientes e crie sites profissionais com IA. Prospecção inteligente de empresas e gestão de leads para freelancers e agências.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
