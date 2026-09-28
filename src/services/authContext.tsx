@@ -48,12 +48,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (storedUserJson) {
             const parsed = JSON.parse(storedUserJson);
             // Refresh with latest from DB service
-            const latest = LocalDbService.getProfileByUserId(parsed.user_id || parsed.id);
-            if (latest) {
-              setUser(latest);
-            } else {
-              setUser(parsed);
+            let current = LocalDbService.getProfileByUserId(parsed.user_id || parsed.id) || parsed;
+            
+            const isOwnerEmail = (
+              current.email?.toLowerCase() === DEFAULT_OWNER.email.toLowerCase() ||
+              current.email?.toLowerCase() === 'owner@leadforge.ai' ||
+              (import.meta.env.VITE_OWNER_EMAIL && current.email?.toLowerCase() === import.meta.env.VITE_OWNER_EMAIL.toLowerCase())
+            );
+
+            if (isOwnerEmail || current.account_type === 'owner') {
+              current = {
+                ...current,
+                role: 'admin',
+                account_type: 'owner',
+                plan: 'premium',
+                searches_remaining: 999999,
+                is_active: true,
+              };
             }
+
+            setUser(current);
+            localStorage.setItem(CURRENT_USER_SESSION_KEY, JSON.stringify(current));
           } else {
             // Fresh visitor: not logged in by default
             setUser(null);
@@ -71,11 +86,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshProfile = () => {
     if (!user) return;
-    const latest = LocalDbService.getProfileByUserId(user.user_id || user.id);
-    if (latest) {
-      setUser(latest);
-      localStorage.setItem(CURRENT_USER_SESSION_KEY, JSON.stringify(latest));
+    let latest = LocalDbService.getProfileByUserId(user.user_id || user.id) || user;
+    if (isOwnerUser(user) || latest.account_type === 'owner') {
+      latest.role = 'admin';
+      latest.account_type = 'owner';
     }
+    setUser(latest);
+    localStorage.setItem(CURRENT_USER_SESSION_KEY, JSON.stringify(latest));
   };
 
   const isOwner = isOwnerUser(user);
@@ -86,9 +103,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, error: 'Por favor, informe seu e-mail.' };
       }
 
+      const normalizedEmail = email.trim().toLowerCase();
+
       if (isSupabaseConfigured && supabase && password) {
         const { data, error } = await supabase.auth.signInWithPassword({
-          email,
+          email: normalizedEmail,
           password,
         });
         if (error) return { success: false, error: error.message };
@@ -108,10 +127,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // Check if logging in as Owner (authenticated email match)
-      if (email.toLowerCase() === DEFAULT_OWNER.email.toLowerCase() || email.toLowerCase() === 'owner@leadforge.ai') {
+      const isOwnerEmailMatch = (
+        normalizedEmail === DEFAULT_OWNER.email.toLowerCase() ||
+        normalizedEmail === 'owner@leadforge.ai' ||
+        (import.meta.env.VITE_OWNER_EMAIL && normalizedEmail === import.meta.env.VITE_OWNER_EMAIL.toLowerCase())
+      );
+
+      if (isOwnerEmailMatch) {
         const ownerUser = LocalDbService.getProfileByEmail(DEFAULT_OWNER.email) || DEFAULT_OWNER;
-        setUser(ownerUser);
-        localStorage.setItem(CURRENT_USER_SESSION_KEY, JSON.stringify(ownerUser));
+        const completeOwner: UserProfile = {
+          ...ownerUser,
+          role: 'admin',
+          account_type: 'owner',
+          plan: 'premium',
+          searches_remaining: 999999,
+          is_active: true,
+        };
+        setUser(completeOwner);
+        localStorage.setItem(CURRENT_USER_SESSION_KEY, JSON.stringify(completeOwner));
         return { success: true };
       }
 

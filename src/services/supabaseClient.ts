@@ -468,12 +468,36 @@ function setStored<T>(key: string, value: T): void {
 
 // Ensure default accounts exist with correct roles & account_types
 const currentProfiles = getStored<UserProfile[]>(STORAGE_KEYS.PROFILES, []);
-const hasOwner = currentProfiles.some(p => p.role === 'admin' && p.account_type === 'owner');
+const hasOwner = currentProfiles.some(p => (
+  (p.role === 'admin' && p.account_type === 'owner') ||
+  p.email?.toLowerCase() === DEFAULT_OWNER.email.toLowerCase() ||
+  p.email?.toLowerCase() === 'owner@leadforge.ai'
+));
 const hasCustomer = currentProfiles.some(p => p.email === DEFAULT_CUSTOMER.email);
 
 if (!hasOwner || !hasCustomer || currentProfiles.length === 0) {
   // Fresh initialization with clean owner and customer
   setStored(STORAGE_KEYS.PROFILES, [DEFAULT_OWNER, DEFAULT_CUSTOMER]);
+} else {
+  // Synchronize owner profile to prevent stale permissions
+  let updated = false;
+  const synchronized = currentProfiles.map(p => {
+    if (p.email?.toLowerCase() === DEFAULT_OWNER.email.toLowerCase() || p.email?.toLowerCase() === 'owner@leadforge.ai') {
+      updated = true;
+      return {
+        ...p,
+        role: 'admin' as UserRole,
+        account_type: 'owner' as AccountType,
+        plan: 'premium' as UserPlan,
+        searches_remaining: 999999,
+        is_active: true,
+      };
+    }
+    return p;
+  });
+  if (updated) {
+    setStored(STORAGE_KEYS.PROFILES, synchronized);
+  }
 }
 
 if (!localStorage.getItem(STORAGE_KEYS.LEADS)) {

@@ -23,6 +23,24 @@ export function createApiApp() {
     next();
   });
 
+  // Normalizador de rotas para suporte completo a Netlify Functions e Express Server
+  // Garante que requisições como /.netlify/functions/api/* sejam roteadas perfeitamente para /api/*
+  app.use((req, res, next) => {
+    if (req.url.startsWith('/.netlify/functions/api')) {
+      let normalized = req.url.slice('/.netlify/functions/api'.length);
+      if (!normalized.startsWith('/')) {
+        normalized = '/' + normalized;
+      }
+      if (!normalized.startsWith('/api')) {
+        normalized = '/api' + normalized;
+      }
+      req.url = normalized;
+    } else if (!req.url.startsWith('/api') && req.url !== '/' && !req.url.startsWith('/site/')) {
+      req.url = '/api' + req.url;
+    }
+    next();
+  });
+
   app.use(express.json());
 
   // Helper para obter a URL base em produção dinamicamente
@@ -891,9 +909,19 @@ Suas respostas devem ser práticas, em português brasileiro fluente, encorajado
   });
 
   // 13. Verificação Server-Side de Proprietário & Controle de Acesso Admin
+  const getOwnerEmails = (): string[] => [
+    'jknetoe@gmail.com',
+    'owner@leadforge.ai',
+    ...(process.env.OWNER_EMAIL ? [process.env.OWNER_EMAIL.trim().toLowerCase()] : []),
+    ...(process.env.ADMIN_EMAIL ? [process.env.ADMIN_EMAIL.trim().toLowerCase()] : []),
+  ];
+
   app.post('/api/admin/verify-owner', (req, res) => {
-    const { role, account_type } = req.body;
-    const isOwner = role === 'admin' && account_type === 'owner';
+    const body = req.body || {};
+    const { role, account_type, email } = body;
+    const normalizedEmail = (email || '').trim().toLowerCase();
+    const isOwnerEmail = Boolean(normalizedEmail && getOwnerEmails().includes(normalizedEmail));
+    const isOwner = (role === 'admin' && account_type === 'owner') || isOwnerEmail;
     
     if (isOwner) {
       return res.json({
@@ -915,9 +943,12 @@ Suas respostas devem ser práticas, em português brasileiro fluente, encorajado
 
   // 14. Atualização Segura de Usuários
   app.post('/api/admin/manage-user', (req, res) => {
-    const { caller_role, target_user_id, updates } = req.body;
+    const body = req.body || {};
+    const { caller_role, caller_email, target_user_id, updates } = body;
+    const normalizedEmail = (caller_email || '').trim().toLowerCase();
+    const isOwnerEmail = Boolean(normalizedEmail && getOwnerEmails().includes(normalizedEmail));
 
-    if (caller_role !== 'admin') {
+    if (caller_role !== 'admin' && !isOwnerEmail) {
       return res.status(403).json({
         error: 'Não autorizado. Usuários normais não possuem permissão para alterar cargos, cotas ou planos.',
       });
@@ -932,10 +963,13 @@ Suas respostas devem ser práticas, em português brasileiro fluente, encorajado
   });
 
   // 15. Verificação Server-Side de Autorização da Rota /admin
-  app.post('/api/admin/verify-access', (req, res) => {
-    const { role, account_type } = req.body;
-    const isAdmin = role === 'admin';
-    const isOwner = role === 'admin' && account_type === 'owner';
+  const handleVerifyAccess = (req: express.Request, res: express.Response) => {
+    const body = req.body || {};
+    const { role, account_type, email } = body;
+    const normalizedEmail = (email || '').trim().toLowerCase();
+    const isOwnerEmail = Boolean(normalizedEmail && getOwnerEmails().includes(normalizedEmail));
+    const isOwner = (role === 'admin' && account_type === 'owner') || isOwnerEmail;
+    const isAdmin = role === 'admin' || isOwner;
 
     if (!isAdmin) {
       return res.status(403).json({
@@ -950,6 +984,16 @@ Suas respostas devem ser práticas, em português brasileiro fluente, encorajado
       role: 'admin',
       account_type: isOwner ? 'owner' : 'admin',
       message: 'Acesso autorizado ao painel administrativo.',
+    });
+  };
+
+  app.post('/api/admin/verify-access', handleVerifyAccess);
+  app.get('/api/admin/verify-access', (req, res) => {
+    res.json({
+      status: 'online',
+      service: 'LeadForge Admin Guard',
+      authorized: true,
+      note: 'Use POST para validação com credenciais do usuário',
     });
   });
 

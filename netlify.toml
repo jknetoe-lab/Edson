@@ -9,14 +9,14 @@
 # 1. Redireciona todas as chamadas /api/* para a Netlify Function sem alterar as rotas do frontend
 [[redirects]]
   from = "/api/*"
-  to = "/.netlify/functions/api/api/:splat"
+  to = "/.netlify/functions/api/:splat"
   status = 200
   force = true
 
 # 2. Rota específica do Webhook do Mercado Pago (garante correspondência direta para o webhook em produção)
 [[redirects]]
   from = "/api/webhooks/mercadopago"
-  to = "/.netlify/functions/api/api/webhooks/mercadopago"
+  to = "/.netlify/functions/api/webhooks/mercadopago"
   status = 200
   force = true
 
