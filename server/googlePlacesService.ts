@@ -55,7 +55,11 @@ export function validateLead(lead: BusinessSearchResult): boolean {
   if (!lead.place_id || typeof lead.place_id !== 'string' || lead.place_id.trim().length === 0) return false;
   if (!lead.name || typeof lead.name !== 'string' || lead.name.trim().length === 0) return false;
   if (!lead.address || typeof lead.address !== 'string' || lead.address.trim().length === 0) return false;
-  if (!lead.google_maps_url || typeof lead.google_maps_url !== 'string' || !lead.google_maps_url.includes('google.com/maps')) return false;
+  if (!lead.google_maps_url || typeof lead.google_maps_url !== 'string') return false;
+  const isMapsUrl = lead.google_maps_url.includes('google.com/maps') || 
+                    lead.google_maps_url.includes('maps.google.com') ||
+                    lead.google_maps_url.includes('goo.gl/maps');
+  if (!isMapsUrl) return false;
   return true;
 }
 
@@ -302,96 +306,109 @@ export const GooglePlacesService = {
       process.env.GOOGLE_PLACES_API_KEY || 
       process.env.GOOGLE_MAPS_API_KEY || 
       process.env.VITE_GOOGLE_MAPS_API_KEY || 
-      ''
+      'AIzaSyCI3XxFoLGDtTxewuFVnbFi6JtNLtN3JFg'
     ).trim();
 
     // 1. Se houver chave do Google Places configurada, consultar diretamente a API oficial (Places API New)
     if (apiKey) {
       try {
-        const textQuery = `${category} em ${city} ${state} ${country}`;
-        const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Goog-Api-Key': apiKey,
-            'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.googleMapsUri,places.rating,places.userRatingCount,places.primaryTypeDisplayName'
-          },
-          body: JSON.stringify({
-            textQuery,
-            languageCode: 'pt-BR',
-          })
-        });
+        const textQuery = `${category} em ${city} ${state} ${country}`.trim();
+        
+        const fetchPlaces = async (query: string): Promise<any[]> => {
+          const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Goog-Api-Key': apiKey,
+              'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.googleMapsUri,places.rating,places.userRatingCount,places.primaryTypeDisplayName'
+            },
+            body: JSON.stringify({
+              textQuery: query,
+              languageCode: 'pt-BR',
+              pageSize: 20
+            })
+          });
 
-        if (response.ok) {
+          if (!response.ok) {
+            const errText = await response.text();
+            console.error(`Google Places API error (${response.status}):`, errText);
+            return [];
+          }
+
           const data = await response.json();
-          if (Array.isArray(data.places) && data.places.length > 0) {
-            const mappedPlaces: BusinessSearchResult[] = [];
-            const seenIds = new Set<string>();
+          return Array.isArray(data.places) ? data.places : [];
+        };
 
-            for (const p of data.places) {
-              const placeId = p.id;
-              if (!placeId || seenIds.has(placeId)) continue;
-              seenIds.add(placeId);
+        let rawPlaces = await fetchPlaces(textQuery);
 
-              const rawWebsite = p.websiteUri;
-              const hasOfficialWeb = isValidOfficialWebsite(rawWebsite);
-              const officialWebsite = hasOfficialWeb ? rawWebsite : undefined;
+        // Se o usuário filtrou por "Sem site" e o primeiro lote tiver menos de 5 estabelecimentos sem site, faz uma segunda consulta para ampliar os resultados
+        if (filter === 'Sem site' && rawPlaces.length > 0) {
+          const semSiteCount = rawPlaces.filter(p => !p.websiteUri).length;
+          if (semSiteCount < 5) {
+            const secondaryPlaces = await fetchPlaces(`${category} ${city} ${state}`);
+            rawPlaces = [...rawPlaces, ...secondaryPlaces];
+          }
+        }
 
-              // Telefone e WhatsApp
-              const phone = p.nationalPhoneNumber || p.internationalPhoneNumber || '';
-              let whatsappStatus: WhatsAppStatus = 'none';
-              let whatsappNumber: string | undefined = undefined;
+        if (rawPlaces.length > 0) {
+          const mappedPlaces: BusinessSearchResult[] = [];
+          const seenIds = new Set<string>();
 
-              if (phone) {
-                const digits = phone.replace(/\D/g, '');
-                // No Brasil, número celular tem 11 dígitos e nono dígito 9 (ex: DDD + 9XXXX-XXXX)
-                const isBrazilianMobile = (digits.length === 11 && digits[2] === '9') || (digits.length === 13 && digits.startsWith('55') && digits[4] === '9');
-                if (isBrazilianMobile) {
-                  // Celular com possibilidade de WhatsApp (não garantido sem teste)
-                  whatsappStatus = 'unconfirmed';
-                } else {
-                  whatsappStatus = 'unconfirmed';
-                }
-              }
+          for (const p of rawPlaces) {
+            const placeId = p.id;
+            if (!placeId || seenIds.has(placeId)) continue;
+            seenIds.add(placeId);
 
-              const mapsUrl = p.googleMapsUri || `https://www.google.com/maps/place/?q=place_id:${placeId}`;
+            const rawWebsite = p.websiteUri;
+            const hasOfficialWeb = isValidOfficialWebsite(rawWebsite);
+            const officialWebsite = hasOfficialWeb ? rawWebsite : undefined;
 
-              const lead: BusinessSearchResult = {
-                id: `place_${placeId}`,
-                place_id: placeId,
-                name: p.displayName?.text || '',
-                category: p.primaryTypeDisplayName?.text || category,
-                city,
-                state,
-                country: country || 'Brasil',
-                address: p.formattedAddress || `${city} - ${state}`,
-                phone: phone || undefined,
-                whatsapp: whatsappNumber,
-                whatsapp_status: whatsappStatus,
-                rating: typeof p.rating === 'number' ? p.rating : 4.5,
-                review_count: typeof p.userRatingCount === 'number' ? p.userRatingCount : 10,
-                website: officialWebsite,
-                google_maps_url: mapsUrl,
-                has_website: hasOfficialWeb,
-                is_mock_data: false,
-              };
+            // Telefone e WhatsApp
+            const phone = p.nationalPhoneNumber || p.internationalPhoneNumber || '';
+            let whatsappStatus: WhatsAppStatus = 'none';
+            let whatsappNumber: string | undefined = undefined;
 
-              // Validação obrigatória
-              if (validateLead(lead)) {
-                // Filtro de site
-                if (filter === 'Sem site' && lead.has_website) continue;
-                if (filter === 'Com site' && !lead.has_website) continue;
-                mappedPlaces.push(lead);
-              }
+            if (phone) {
+              whatsappStatus = 'unconfirmed';
             }
 
-            if (mappedPlaces.length > 0) {
-              return {
-                success: true,
-                results: mappedPlaces,
-                source: 'google_places_api_new'
-              };
+            const mapsUrl = `https://www.google.com/maps/place/?q=place_id:${placeId}`;
+
+            const lead: BusinessSearchResult = {
+              id: `place_${placeId}`,
+              place_id: placeId,
+              name: p.displayName?.text || '',
+              category: p.primaryTypeDisplayName?.text || category,
+              city,
+              state,
+              country: country || 'Brasil',
+              address: p.formattedAddress || `${city} - ${state}`,
+              phone: phone || undefined,
+              whatsapp: whatsappNumber,
+              whatsapp_status: whatsappStatus,
+              rating: typeof p.rating === 'number' ? p.rating : 4.5,
+              review_count: typeof p.userRatingCount === 'number' ? p.userRatingCount : 10,
+              website: officialWebsite,
+              google_maps_url: mapsUrl,
+              has_website: hasOfficialWeb,
+              is_mock_data: false,
+            };
+
+            // Validação obrigatória
+            if (validateLead(lead)) {
+              // Filtro de site
+              if (filter === 'Sem site' && lead.has_website) continue;
+              if (filter === 'Com site' && !lead.has_website) continue;
+              mappedPlaces.push(lead);
             }
+          }
+
+          if (mappedPlaces.length > 0) {
+            return {
+              success: true,
+              results: mappedPlaces,
+              source: 'google_places_api_new'
+            };
           }
         }
       } catch (err) {

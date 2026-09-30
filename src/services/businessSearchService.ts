@@ -18,7 +18,11 @@ export function validateLeadItem(lead: any): boolean {
   if (!lead.place_id || typeof lead.place_id !== 'string' || lead.place_id.trim().length === 0) return false;
   if (!lead.name || typeof lead.name !== 'string' || lead.name.trim().length === 0) return false;
   if (!lead.address || typeof lead.address !== 'string' || lead.address.trim().length === 0) return false;
-  if (!lead.google_maps_url || typeof lead.google_maps_url !== 'string' || !lead.google_maps_url.includes('google.com/maps')) return false;
+  if (!lead.google_maps_url || typeof lead.google_maps_url !== 'string') return false;
+  const isMapsUrl = lead.google_maps_url.includes('google.com/maps') || 
+                    lead.google_maps_url.includes('maps.google.com') ||
+                    lead.google_maps_url.includes('goo.gl/maps');
+  if (!isMapsUrl) return false;
   return true;
 }
 
