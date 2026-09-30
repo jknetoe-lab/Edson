@@ -43,6 +43,22 @@ export function createApiApp() {
 
   app.use(express.json());
 
+  // Fallback para Netlify Functions quando o corpo vier em event.body
+  app.use((req, res, next) => {
+    if ((!req.body || typeof req.body !== 'object' || Object.keys(req.body).length === 0) && (req as any).apiGateway?.event?.body) {
+      try {
+        const raw = (req as any).apiGateway.event.body;
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (parsed && typeof parsed === 'object') {
+          req.body = parsed;
+        }
+      } catch (e) {
+        // ignore parsing errors
+      }
+    }
+    next();
+  });
+
   // Helper para obter a URL base em produção dinamicamente
   function getBaseAppUrl(req?: express.Request): string {
     if (process.env.APP_URL && process.env.APP_URL !== 'MY_APP_URL') {
@@ -723,13 +739,28 @@ Suas respostas devem ser práticas, em português brasileiro fluente, encorajado
 
   // 11. Painel Financeiro do Administrador
   app.get('/api/admin/financial-summary', (req, res) => {
+    const callerEmail = (req.headers['x-admin-email'] as string || req.query.email as string || '').trim().toLowerCase();
+    const isOwner = Boolean(callerEmail && getOwnerEmails().includes(callerEmail));
+
+    if (callerEmail && !isOwner) {
+      return res.status(403).json({ error: 'Acesso não autorizado ao resumo financeiro.' });
+    }
+
     const summary = PaymentStore.getFinancialSummary();
     res.json(summary);
   });
 
   // 12. Simulador de Webhook Mercado Pago
   app.post('/api/admin/simulate-webhook', (req, res) => {
-    const { scenario, plan, customer_id, customer_email, payment_method } = req.body;
+    const body = req.body || {};
+    const callerEmail = (req.headers['x-admin-email'] as string || body.caller_email || '').trim().toLowerCase();
+    const isOwner = Boolean(callerEmail && getOwnerEmails().includes(callerEmail));
+
+    if (callerEmail && !isOwner) {
+      return res.status(403).json({ error: 'Acesso não autorizado ao simulador de webhook.' });
+    }
+
+    const { scenario, plan, customer_id, customer_email, payment_method } = body;
     const targetPlan = (plan as UserPlan) || 'basic';
     const targetUserId = customer_id || 'usr_customer_002';
     const targetEmail = customer_email || 'rodrigo@agenciadigital.com.br';
@@ -918,12 +949,11 @@ Suas respostas devem ser práticas, em português brasileiro fluente, encorajado
 
   app.post('/api/admin/verify-owner', (req, res) => {
     const body = req.body || {};
-    const { role, account_type, email } = body;
+    const { email } = body;
     const normalizedEmail = (email || '').trim().toLowerCase();
     const isOwnerEmail = Boolean(normalizedEmail && getOwnerEmails().includes(normalizedEmail));
-    const isOwner = (role === 'admin' && account_type === 'owner') || isOwnerEmail;
     
-    if (isOwner) {
+    if (isOwnerEmail) {
       return res.json({
         authorized: true,
         role: 'admin',
@@ -937,18 +967,18 @@ Suas respostas devem ser práticas, em português brasileiro fluente, encorajado
 
     return res.status(403).json({
       authorized: false,
-      error: 'Acesso negado. Apenas o proprietário (role = admin e account_type = owner) possui autorização.',
+      error: 'Acesso negado. Apenas o proprietário possui autorização.',
     });
   });
 
   // 14. Atualização Segura de Usuários
   app.post('/api/admin/manage-user', (req, res) => {
     const body = req.body || {};
-    const { caller_role, caller_email, target_user_id, updates } = body;
+    const { caller_email, target_user_id, updates } = body;
     const normalizedEmail = (caller_email || '').trim().toLowerCase();
     const isOwnerEmail = Boolean(normalizedEmail && getOwnerEmails().includes(normalizedEmail));
 
-    if (caller_role !== 'admin' && !isOwnerEmail) {
+    if (!isOwnerEmail) {
       return res.status(403).json({
         error: 'Não autorizado. Usuários normais não possuem permissão para alterar cargos, cotas ou planos.',
       });
@@ -965,13 +995,11 @@ Suas respostas devem ser práticas, em português brasileiro fluente, encorajado
   // 15. Verificação Server-Side de Autorização da Rota /admin
   const handleVerifyAccess = (req: express.Request, res: express.Response) => {
     const body = req.body || {};
-    const { role, account_type, email } = body;
+    const { email } = body;
     const normalizedEmail = (email || '').trim().toLowerCase();
     const isOwnerEmail = Boolean(normalizedEmail && getOwnerEmails().includes(normalizedEmail));
-    const isOwner = (role === 'admin' && account_type === 'owner') || isOwnerEmail;
-    const isAdmin = role === 'admin' || isOwner;
 
-    if (!isAdmin) {
+    if (!isOwnerEmail) {
       return res.status(403).json({
         authorized: false,
         error: '403 Proibido: Acesso restrito a administradores. Usuários comuns não possuem autorização.',
@@ -980,9 +1008,9 @@ Suas respostas devem ser práticas, em português brasileiro fluente, encorajado
 
     return res.json({
       authorized: true,
-      isOwner,
+      isOwner: true,
       role: 'admin',
-      account_type: isOwner ? 'owner' : 'admin',
+      account_type: 'owner',
       message: 'Acesso autorizado ao painel administrativo.',
     });
   };

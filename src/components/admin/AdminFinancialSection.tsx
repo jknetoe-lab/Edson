@@ -22,8 +22,10 @@ import {
   ArrowUpRight 
 } from 'lucide-react';
 import { FinancialTransaction, PaymentRecord, UserPlan } from '../../types';
+import { useAuth } from '../../services/authContext';
 
 export const AdminFinancialSection: React.FC = () => {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [financialData, setFinancialData] = useState<any>(null);
   const [mpConfig, setMpConfig] = useState<any>(null);
@@ -43,7 +45,11 @@ export const AdminFinancialSection: React.FC = () => {
 
   const fetchSummary = async () => {
     try {
-      const res = await fetch('/api/admin/financial-summary');
+      const res = await fetch('/api/admin/financial-summary', {
+        headers: {
+          'x-admin-email': user?.email || '',
+        },
+      });
       if (res.ok) {
         const data = await res.json();
         setFinancialData(data);
@@ -67,7 +73,7 @@ export const AdminFinancialSection: React.FC = () => {
 
   useEffect(() => {
     Promise.all([fetchSummary(), fetchConfig()]).finally(() => setLoading(false));
-  }, []);
+  }, [user]);
 
   const handleRunSimulation = async () => {
     setSimulating(true);
@@ -75,13 +81,17 @@ export const AdminFinancialSection: React.FC = () => {
     try {
       const res = await fetch('/api/admin/simulate-webhook', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-admin-email': user?.email || '',
+        },
         body: JSON.stringify({
           scenario: simScenario,
           plan: simPlan,
           payment_method: simMethod,
           customer_id: 'usr_customer_002',
           customer_email: 'rodrigo@agenciadigital.com.br',
+          caller_email: user?.email || '',
         }),
       });
       const data = await res.json();

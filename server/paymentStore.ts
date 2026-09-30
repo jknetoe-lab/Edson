@@ -11,9 +11,17 @@ import {
   SubscriptionStatus 
 } from '../src/types';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const DATA_DIR = path.resolve(__dirname, '../data');
+// In serverless environments (e.g. Netlify Functions), the root is read-only so use /tmp
+const isServerless = Boolean(
+  process.env.NETLIFY || 
+  process.env.AWS_LAMBDA_FUNCTION_NAME || 
+  process.env.LAMBDA_TASK_ROOT
+);
+
+const DATA_DIR = isServerless
+  ? path.resolve(process.env.TMPDIR || '/tmp', 'leadforge-data')
+  : path.resolve(process.cwd(), 'data');
+
 const DATA_FILE = path.resolve(DATA_DIR, 'financial_data.json');
 
 interface FinancialStoreData {

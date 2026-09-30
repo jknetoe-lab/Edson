@@ -189,33 +189,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, initialMode, onClo
             </div>
           )}
 
-          {mode === 'login' && (
-            <div className="pt-1 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail('jknetoe@gmail.com');
-                  setPassword('admin123');
-                }}
-                className="text-[11px] font-semibold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1.5"
-              >
-                <span>👑</span>
-                <span>Proprietário (jknetoe@gmail.com)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail('rodrigo@agenciadigital.com.br');
-                  setPassword('cliente123');
-                }}
-                className="text-[11px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1.5"
-              >
-                <span>👤</span>
-                <span>Cliente Demo</span>
-              </button>
-            </div>
-          )}
-
           <button
             type="submit"
             disabled={loading}

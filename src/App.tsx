@@ -151,9 +151,15 @@ function MainApp() {
     const route = parseCurrentRoute();
     if (route.view === 'dashboard') {
       if (user) {
-        setCurrentView('dashboard');
-        setCurrentDashboardTab(route.tab);
-        updateBrowserUrl('dashboard', route.tab);
+        if (route.tab === 'admin' && user.role !== 'admin') {
+          setCurrentView('dashboard');
+          setCurrentDashboardTab('overview');
+          updateBrowserUrl('dashboard', 'overview');
+        } else {
+          setCurrentView('dashboard');
+          setCurrentDashboardTab(route.tab);
+          updateBrowserUrl('dashboard', route.tab);
+        }
       } else {
         // Not logged in but trying to access protected route (e.g. /admin or /dashboard)
         setPendingTabAfterAuth(route.tab);
