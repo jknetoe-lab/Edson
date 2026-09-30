@@ -4,6 +4,7 @@ import { GoogleGenAI } from '@google/genai';
 import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 import { PaymentStore } from './paymentStore';
 import { ProjectStore } from './projectStore';
+import { GooglePlacesService } from './googlePlacesService';
 import { UserPlan, PaymentRecord, FinancialTransaction, PaymentEvent, Project } from '../src/types';
 
 export function createApiApp() {
@@ -114,6 +115,7 @@ export function createApiApp() {
         style,
         rating,
         review_count,
+        custom_prompt,
       } = req.body;
 
       const prompt = `Você é um Diretor de Arte e Estrategista de Conversão Digital de uma das melhores agências de Web Design do Brasil.
@@ -133,9 +135,12 @@ DADOS REAIS DA EMPRESA:
 - Estilo: "${style || 'Moderno e Profissional'}"
 - Avaliação Real no Google: ${rating ? `${rating} estrelas (${review_count || 0} avaliações)` : 'Não informada'}
 
-DIRETRIZES CRÍTICAS DE QUALIDADE E CONFIANÇA:
-1. NÃO invente preços, descontos com porcentagens falsas, diplomas que não foram informados, prêmios fictícios ou dados mentirosos.
-2. Evite clichês genéricos como "Bem-vindo ao nosso site" ou "Buscamos a excelência". Escreva copy moderno, focado em benefícios reais e acolhimento do cliente.
+PERSONALIZAÇÃO ADICIONAL SOLICITADA PELO USUÁRIO (CUSTOM PROMPT):
+${custom_prompt ? `"${custom_prompt}"` : 'Nenhuma personalização extra informada.'}
+
+DIRETRIZES CRÍTICAS DE QUALIDADE, CONFIANÇA E PERSONALIZAÇÃO:
+1. SIGA A PERSONALIZAÇÃO DO USUÁRIO para direcionar as cores, layout, tom, headline e proposta estética.
+2. REGRA ABSOLUTA - NÃO INVENTE DADOS DA EMPRESA: A personalização do usuário NUNCA deve fazer a IA inventar novos números de telefone, números de WhatsApp, endereços falsos, preços inventados, serviços mirabolantes, avaliações fictícias ou certificações inexistentes.
 3. Se não houver depoimentos de clientes reais fornecidos, NÃO invente depoimentos falsos com nomes aleatórios. Em vez disso, mencione a reputação e compromisso com satisfação.
 4. Ajuste o tom de voz e os termos estritamente ao nicho da empresa:
    - Se for BARBEARIA: foco em corte clássico, visagismo, navalha, toalha quente, pontualidade e cerveja/café.
@@ -319,13 +324,49 @@ Suas respostas devem ser práticas, em português brasileiro fluente, encorajado
     }
   });
 
-  // 3. Prospecção de Empresas
-  app.post('/api/search/businesses', (req, res) => {
-    res.json({
-      message: 'Endpoint de prospecção pronto para integração.',
-      isMock: true,
-      providerName: 'LeadForge Business Engine',
-    });
+  // 3. Prospecção de Empresas com Google Places / Google Maps Real
+  app.post('/api/search/businesses', async (req, res) => {
+    try {
+      const { country = 'Brasil', state = '', city = '', category = '', filter = 'Todos' } = req.body || {};
+      if (!city.trim() || !category.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: 'Informe a cidade e a categoria para realizar a busca.',
+          results: [],
+        });
+      }
+
+      const searchResult = await GooglePlacesService.searchPlaces({
+        country,
+        state,
+        city,
+        category,
+        filter: filter as any,
+      });
+
+      if (!searchResult.success || searchResult.results.length === 0) {
+        return res.status(200).json({
+          success: false,
+          error: searchResult.error || 'Não foi possível consultar o Google Maps. Tente novamente.',
+          results: [],
+          source: searchResult.source,
+        });
+      }
+
+      return res.json({
+        success: true,
+        results: searchResult.results,
+        source: searchResult.source,
+        count: searchResult.results.length,
+      });
+    } catch (err: any) {
+      console.error('Erro no endpoint /api/search/businesses:', err);
+      return res.status(500).json({
+        success: false,
+        error: 'Não foi possível consultar o Google Maps. Tente novamente.',
+        results: [],
+      });
+    }
   });
 
   // 3.1. Public Client Websites & Custom Links API

@@ -213,21 +213,23 @@ function MainApp() {
   };
 
   const handleEditProject = (project: Project) => {
-    // When editing project, fill in the creator
+    // When editing project, fill in the creator preserving custom_prompt and business details
     setSelectedLeadForCreation({
       id: project.id,
       name: project.site_data.business_name,
       category: project.site_data.category,
-      city: project.site_data.contact?.address_display || '',
-      state: '',
+      city: project.site_data.city || (project.site_data.contact?.address_display || ''),
+      state: project.site_data.state || '',
       phone: project.site_data.phone,
       whatsapp: project.site_data.whatsapp,
+      whatsapp_status: project.site_data.whatsapp_status || 'unconfirmed',
       address: project.site_data.address,
-      rating: 5,
-      review_count: 50,
-      google_maps_url: '',
+      rating: project.site_data.rating,
+      review_count: project.site_data.review_count,
+      google_maps_url: project.site_data.google_maps_url || '',
       has_website: true,
-    });
+      custom_prompt: project.custom_prompt || (project.site_data as any).custom_prompt || '',
+    } as any);
     setCurrentDashboardTab('criar-site');
   };
 

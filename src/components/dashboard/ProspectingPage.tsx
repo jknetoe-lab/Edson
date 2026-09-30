@@ -14,6 +14,7 @@ import {
   ExternalLink, 
   Star, 
   AlertTriangle, 
+  AlertCircle,
   Check, 
   Info,
   Filter,
@@ -70,6 +71,7 @@ export const ProspectingPage: React.FC<ProspectingPageProps> = ({
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<BusinessSearchResult[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [savedLeadIds, setSavedLeadIds] = useState<Set<string>>(new Set());
   const [detailModalLead, setDetailModalLead] = useState<BusinessSearchResult | null>(null);
   const [showLimitReachedNotice, setShowLimitReachedNotice] = useState(false);
@@ -79,6 +81,7 @@ export const ProspectingPage: React.FC<ProspectingPageProps> = ({
     const existing = LocalDbService.getLeads(user?.user_id);
     const set = new Set<string>();
     existing.forEach(l => {
+      if (l.place_id) set.add(l.place_id);
       set.add(l.business_name);
     });
     setSavedLeadIds(set);
@@ -87,6 +90,7 @@ export const ProspectingPage: React.FC<ProspectingPageProps> = ({
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     setShowLimitReachedNotice(false);
+    setSearchError(null);
 
     // Validação do limite de buscas (Proprietário NUNCA é bloqueado)
     if (!isOwner && user?.plan !== 'premium' && (user?.searches_remaining ?? 0) <= 0) {
@@ -107,22 +111,32 @@ export const ProspectingPage: React.FC<ProspectingPageProps> = ({
       };
 
       const searchOutput = await BusinessSearchService.search(searchParams);
-      setResults(searchOutput.results);
+      if (searchOutput.error) {
+        setSearchError(searchOutput.error);
+        setResults([]);
+      } else {
+        setSearchError(null);
+        setResults(searchOutput.results);
+      }
 
-      // Consome 1 busca e grava no log
-      consumeSearch();
-      LocalDbService.logSearch({
-        user_id: user?.user_id || 'anonymous',
-        country,
-        state,
-        city,
-        category,
-        filter,
-        results_count: searchOutput.results.length,
-      });
+      // Consome 1 busca e grava no log apenas se a busca teve sucesso
+      if (searchOutput.results.length > 0) {
+        consumeSearch();
+        LocalDbService.logSearch({
+          user_id: user?.user_id || 'anonymous',
+          country,
+          state,
+          city,
+          category,
+          filter,
+          results_count: searchOutput.results.length,
+        });
+      }
 
     } catch (err) {
       console.error('Erro ao executar busca:', err);
+      setSearchError('Não foi possível consultar o Google Maps. Tente novamente.');
+      setResults([]);
     } finally {
       setLoading(false);
     }
@@ -130,9 +144,23 @@ export const ProspectingPage: React.FC<ProspectingPageProps> = ({
 
   const handleSaveLead = (item: BusinessSearchResult) => {
     if (!user) return;
+    
+    // Proteção contra duplicatas por Google Place ID ou nome
+    const existingLeads = LocalDbService.getLeads(user.user_id || user.id);
+    const alreadySaved = existingLeads.some(l => 
+      (l.place_id && l.place_id === item.place_id) || 
+      (l.business_name.toLowerCase().trim() === item.name.toLowerCase().trim() && l.city.toLowerCase() === item.city.toLowerCase())
+    );
+
+    if (alreadySaved) {
+      setSavedLeadIds(prev => new Set(prev).add(item.place_id).add(item.name));
+      return;
+    }
+
     const newLead: Lead = {
       id: 'lead_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
       user_id: user.user_id || user.id,
+      place_id: item.place_id,
       business_name: item.name,
       category: item.category,
       city: item.city,
@@ -140,6 +168,7 @@ export const ProspectingPage: React.FC<ProspectingPageProps> = ({
       country: country || 'Brasil',
       phone: item.phone,
       whatsapp: item.whatsapp,
+      whatsapp_status: item.whatsapp_status,
       address: item.address,
       website: item.website,
       google_maps_url: item.google_maps_url,
@@ -147,12 +176,12 @@ export const ProspectingPage: React.FC<ProspectingPageProps> = ({
       review_count: item.review_count,
       has_website: item.has_website,
       status: 'Novo',
-      notes: `Lead prospectado via LeadForge em ${new Date().toLocaleDateString('pt-BR')}.`,
+      notes: `Lead prospectado via Google Maps em ${new Date().toLocaleDateString('pt-BR')}.`,
       created_at: new Date().toISOString(),
     };
 
     LocalDbService.saveLead(newLead);
-    setSavedLeadIds(prev => new Set(prev).add(item.name));
+    setSavedLeadIds(prev => new Set(prev).add(item.place_id).add(item.name));
   };
 
   const isLimitZero = !isOwner && user?.plan !== 'premium' && (user?.searches_remaining ?? 0) <= 0;
@@ -338,21 +367,29 @@ export const ProspectingPage: React.FC<ProspectingPageProps> = ({
         </div>
       </form>
 
-      {/* Development environment notice */}
-      <div className="px-4 py-2.5 bg-slate-100/80 border border-slate-200 rounded-lg flex items-center justify-between text-[11px] text-slate-500">
+      {/* Search Error Notice */}
+      {searchError && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3 text-red-800 animate-in fade-in">
+          <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
+          <span className="text-xs font-semibold">{searchError}</span>
+        </div>
+      )}
+
+      {/* Google Maps / Places Verified Indicator */}
+      <div className="px-4 py-2.5 bg-slate-100/80 border border-slate-200 rounded-lg flex items-center justify-between text-[11px] text-slate-600">
         <div className="flex items-center gap-2">
-          <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          <Info className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
           <span>
-            <strong>Camada de Serviço Ativa:</strong> BusinessSearchService (Modo de desenvolvimento com dados realistas de cidades e nichos brasileiros).
+            <strong>Fonte de Dados:</strong> Google Maps / Google Places oficial com Place ID autêntico. Sem leads inventados.
           </span>
         </div>
-        <span className="hidden sm:inline-block font-mono text-[10px] text-slate-400">
-          Google Places API / ReceitaWS Ready
+        <span className="hidden sm:inline-block font-mono text-[10px] text-indigo-700 font-semibold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+          Google Place ID Verified
         </span>
       </div>
 
       {/* Search Results Area */}
-      {hasSearched && (
+      {hasSearched && !searchError && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-slate-900">
@@ -374,10 +411,10 @@ export const ProspectingPage: React.FC<ProspectingPageProps> = ({
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {results.map((biz) => {
-                const isAlreadySaved = savedLeadIds.has(biz.name);
+                const isAlreadySaved = savedLeadIds.has(biz.place_id) || savedLeadIds.has(biz.name);
                 return (
                   <div
-                    key={biz.id}
+                    key={biz.place_id || biz.id}
                     className="bg-white rounded-xl border border-slate-200 p-5 shadow-2xs hover:border-slate-300 transition-all flex flex-col justify-between"
                   >
                     <div>
@@ -387,48 +424,61 @@ export const ProspectingPage: React.FC<ProspectingPageProps> = ({
                           <span className="text-[11px] font-semibold text-indigo-600 block mb-0.5">
                             {biz.category}
                           </span>
-                          <h3 className="text-sm font-bold text-slate-900 leading-snug">
+                          <h3 className="text-base font-bold text-slate-900 leading-snug">
                             {biz.name}
                           </h3>
                         </div>
 
                         {/* Status do site */}
-                        <span className={`text-[10px] px-2 py-0.5 rounded font-semibold whitespace-nowrap ${
+                        <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold whitespace-nowrap flex items-center gap-1 ${
                           biz.has_website
                             ? 'bg-slate-100 text-slate-700'
-                            : 'bg-red-50 text-red-700 border border-red-200/50'
+                            : 'bg-amber-100 text-amber-900 border border-amber-300'
                         }`}>
-                          {biz.has_website ? 'Com site' : 'Sem site'}
+                          <span>🌐</span>
+                          <span>{biz.has_website ? 'Com site' : 'Sem site'}</span>
                         </span>
                       </div>
 
                       {/* Details & Location */}
-                      <div className="space-y-1.5 text-xs text-slate-600 my-3">
+                      <div className="space-y-2 text-xs text-slate-700 my-3">
                         <div className="flex items-center gap-2">
-                          <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span className="truncate">{biz.address}</span>
+                          <span>📍</span>
+                          <span className="font-medium text-slate-800">{biz.address}</span>
                         </div>
+
                         <div className="flex items-center gap-2">
-                          <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span>{biz.phone}</span>
+                          <span>📞</span>
+                          <span className="font-mono text-slate-800">
+                            {biz.phone || 'Sem telefone informado'}
+                          </span>
                         </div>
-                        {biz.website && (
-                          <div className="flex items-center gap-2">
-                            <Globe className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            <a
-                              href={biz.website}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-indigo-600 hover:underline truncate"
-                            >
-                              {biz.website}
-                            </a>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2 pt-1 text-slate-500">
-                          <div className="flex items-center text-amber-500">
-                            <Star className="w-3.5 h-3.5 fill-current" />
-                            <span className="ml-1 font-mono font-bold text-slate-800 text-xs">
+
+                        {/* WhatsApp Status Indicator */}
+                        <div className="pt-0.5">
+                          {biz.whatsapp_status === 'confirmed' ? (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
+                              <span>🟢</span>
+                              <span>WhatsApp confirmado</span>
+                            </span>
+                          ) : biz.phone ? (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-700 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
+                              <span>📞</span>
+                              <span>Telefone não confirmado como WhatsApp</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md">
+                              <span>❌</span>
+                              <span>Sem telefone</span>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Rating and Reviews */}
+                        <div className="flex items-center gap-2 pt-1 text-slate-600">
+                          <div className="flex items-center text-amber-500 font-bold">
+                            <span>⭐</span>
+                            <span className="ml-1 text-slate-900 font-mono">
                               {biz.rating.toFixed(1)}
                             </span>
                           </div>
@@ -440,23 +490,49 @@ export const ProspectingPage: React.FC<ProspectingPageProps> = ({
                       </div>
                     </div>
 
-                    {/* Action Buttons: Salvar lead, Criar site, Ver detalhes */}
-                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 mt-2">
-                      <button
-                        onClick={() => setDetailModalLead(biz)}
-                        className="px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors flex items-center gap-1"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        <span>Ver detalhes</span>
-                      </button>
+                    {/* Action Buttons: Ver no Google Maps, Ligar / WhatsApp, Salvar lead, Criar site */}
+                    <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 mt-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* Botão Ver no Google Maps */}
+                        <a
+                          href={biz.google_maps_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 text-xs font-semibold bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 rounded-lg transition-colors inline-flex items-center gap-1.5 shadow-2xs"
+                        >
+                          <span>📍</span>
+                          <span>Ver no Google Maps</span>
+                        </a>
+
+                        {/* Botão WhatsApp ou Ligar */}
+                        {biz.whatsapp_status === 'confirmed' && biz.whatsapp ? (
+                          <a
+                            href={`https://wa.me/${biz.whatsapp.replace(/\D/g, '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors inline-flex items-center gap-1.5 shadow-2xs"
+                          >
+                            <span>💬</span>
+                            <span>WhatsApp</span>
+                          </a>
+                        ) : biz.phone ? (
+                          <a
+                            href={`tel:${biz.phone.replace(/\D/g, '')}`}
+                            className="px-3 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg transition-colors inline-flex items-center gap-1.5"
+                          >
+                            <span>📞</span>
+                            <span>Ligar</span>
+                          </a>
+                        ) : null}
+                      </div>
 
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleSaveLead(biz)}
                           disabled={isAlreadySaved}
-                          className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 ${
+                          className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 ${
                             isAlreadySaved
-                              ? 'bg-emerald-50 text-emerald-700'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                               : 'bg-slate-100 hover:bg-slate-200 text-slate-800'
                           }`}
                         >
@@ -478,7 +554,7 @@ export const ProspectingPage: React.FC<ProspectingPageProps> = ({
                             onSelectLeadForSiteCreation(biz);
                             onNavigateTab('criar-site');
                           }}
-                          className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-md transition-colors flex items-center gap-1.5 shadow-2xs"
+                          className="px-3.5 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs"
                         >
                           <Wand2 className="w-3.5 h-3.5" />
                           <span>Criar site</span>

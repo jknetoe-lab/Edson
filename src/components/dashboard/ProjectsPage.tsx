@@ -179,6 +179,16 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigateTab, onEdi
                       )}
                     </div>
 
+                    {/* Personalização Salva */}
+                    {proj.custom_prompt && (
+                      <div className="mt-2.5 px-2.5 py-1.5 bg-indigo-50/70 border border-indigo-100 rounded-lg flex items-start gap-1.5 text-[11px] text-indigo-900">
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-600 shrink-0 mt-0.5" />
+                        <span className="line-clamp-2">
+                          <strong>Personalização:</strong> {proj.custom_prompt}
+                        </span>
+                      </div>
+                    )}
+
                     {/* Client Custom Link Bar */}
                     <div className="mt-3 p-2 bg-slate-50 rounded-lg border border-slate-200/80 flex flex-col gap-1.5">
                       <div className="flex items-center justify-between">

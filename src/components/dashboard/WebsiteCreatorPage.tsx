@@ -25,7 +25,8 @@ import {
   CheckCircle2,
   ShieldCheck,
   Star,
-  Info
+  Info,
+  Edit3
 } from 'lucide-react';
 import { DashboardTab } from './DashboardLayout';
 
@@ -59,6 +60,9 @@ export const WebsiteCreatorPage: React.FC<WebsiteCreatorPageProps> = ({
   const [googleMapsUrl, setGoogleMapsUrl] = useState('');
   const [desiredColors, setDesiredColors] = useState('Automático pelo Nicho');
   const [style, setStyle] = useState('Moderno e Profissional');
+  const [customPrompt, setCustomPrompt] = useState('');
+  const [whatsappStatus, setWhatsappStatus] = useState<'confirmed' | 'unconfirmed' | 'none'>('unconfirmed');
+  const promptTextareaRef = React.useRef<HTMLTextAreaElement>(null);
 
   // Generator State
   const [generating, setGenerating] = useState(false);
@@ -78,13 +82,31 @@ export const WebsiteCreatorPage: React.FC<WebsiteCreatorPageProps> = ({
       setBusinessName(leadName || '');
       setCategory(preselectedLead.category || '');
       setPhone(preselectedLead.phone || '');
-      setWhatsapp(preselectedLead.whatsapp || preselectedLead.phone || '');
+
+      // Verificação rigorosa de WhatsApp: nunca inventar WhatsApp a partir de telefone fixo ou não confirmado
+      const leadWhatsappStatus = ('whatsapp_status' in preselectedLead && preselectedLead.whatsapp_status)
+        ? preselectedLead.whatsapp_status
+        : (preselectedLead.whatsapp ? 'confirmed' : 'unconfirmed');
+      setWhatsappStatus(leadWhatsappStatus);
+
+      const verifiedWhatsapp = (leadWhatsappStatus === 'confirmed' && preselectedLead.whatsapp)
+        ? preselectedLead.whatsapp
+        : '';
+      setWhatsapp(verifiedWhatsapp);
+
       setAddress(preselectedLead.address || '');
       setCity(preselectedLead.city || '');
       setState(preselectedLead.state || '');
       setRating(preselectedLead.rating || undefined);
       setReviewCount(preselectedLead.review_count || undefined);
       setGoogleMapsUrl(preselectedLead.google_maps_url || '');
+
+      const initialCustomPrompt = ('custom_prompt' in preselectedLead && (preselectedLead as any).custom_prompt) 
+        ? String((preselectedLead as any).custom_prompt) 
+        : '';
+      if (initialCustomPrompt) {
+        setCustomPrompt(initialCustomPrompt);
+      }
 
       const baseDesc = ('notes' in preselectedLead ? preselectedLead.notes : undefined) || `Empresa e atendimento de ${preselectedLead.category || 'serviços'} com excelente reputação de clientes locais em ${preselectedLead.city || 'nossa região'}.`;
       setDescription(baseDesc);
@@ -98,14 +120,16 @@ export const WebsiteCreatorPage: React.FC<WebsiteCreatorPageProps> = ({
         category: preselectedLead.category || '',
         description: baseDesc,
         phone: preselectedLead.phone || '',
-        whatsapp: preselectedLead.whatsapp || preselectedLead.phone || '',
+        whatsapp: verifiedWhatsapp,
+        whatsapp_status: leadWhatsappStatus,
         address: preselectedLead.address || '',
         city: preselectedLead.city || '',
         state: preselectedLead.state || '',
         rating: preselectedLead.rating,
         review_count: preselectedLead.review_count,
         google_maps_url: preselectedLead.google_maps_url,
-        instagram: `@${handleCleanName}`
+        instagram: `@${handleCleanName}`,
+        custom_prompt: initialCustomPrompt || customPrompt,
       });
     }
   }, [preselectedLead]);
@@ -116,8 +140,12 @@ export const WebsiteCreatorPage: React.FC<WebsiteCreatorPageProps> = ({
     if (found) {
       setBusinessName(found.business_name);
       setCategory(found.category);
-      setPhone(found.phone);
-      setWhatsapp(found.whatsapp || found.phone);
+      setPhone(found.phone || '');
+
+      const isWpConfirmed = found.whatsapp_status === 'confirmed';
+      setWhatsappStatus(found.whatsapp_status || (found.whatsapp ? 'confirmed' : 'unconfirmed'));
+      setWhatsapp(isWpConfirmed ? (found.whatsapp || '') : '');
+
       setAddress(found.address);
       setCity(found.city);
       setState(found.state);
@@ -138,6 +166,7 @@ export const WebsiteCreatorPage: React.FC<WebsiteCreatorPageProps> = ({
         description: leadData.description,
         phone: leadData.phone,
         whatsapp: leadData.whatsapp,
+        whatsapp_status: leadData.whatsapp_status || whatsappStatus,
         address: leadData.address,
         city: leadData.city,
         state: leadData.state,
@@ -148,6 +177,7 @@ export const WebsiteCreatorPage: React.FC<WebsiteCreatorPageProps> = ({
         opening_hours: openingHours,
         desired_colors: desiredColors,
         style,
+        custom_prompt: leadData.custom_prompt || customPrompt,
       };
 
       const result = await WebsiteGeneratorService.generateWebsite(params);
@@ -172,6 +202,7 @@ export const WebsiteCreatorPage: React.FC<WebsiteCreatorPageProps> = ({
         description,
         phone,
         whatsapp,
+        whatsapp_status: whatsappStatus,
         address,
         city,
         state,
@@ -183,6 +214,7 @@ export const WebsiteCreatorPage: React.FC<WebsiteCreatorPageProps> = ({
         google_maps_url: googleMapsUrl,
         desired_colors: desiredColors,
         style,
+        custom_prompt: customPrompt,
       };
 
       const result = await WebsiteGeneratorService.generateWebsite(params);
@@ -204,6 +236,7 @@ export const WebsiteCreatorPage: React.FC<WebsiteCreatorPageProps> = ({
         description,
         phone,
         whatsapp,
+        whatsapp_status: whatsappStatus,
         address,
         city,
         state,
@@ -215,6 +248,7 @@ export const WebsiteCreatorPage: React.FC<WebsiteCreatorPageProps> = ({
         google_maps_url: googleMapsUrl,
         desired_colors: desiredColors,
         style,
+        custom_prompt: customPrompt,
       };
       const result = await WebsiteGeneratorService.generateWebsite(params);
       setGeneratedSiteData(result);
@@ -241,6 +275,7 @@ export const WebsiteCreatorPage: React.FC<WebsiteCreatorPageProps> = ({
       custom_slug: cleanSlug,
       website_url: `/site/${cleanSlug}`,
       site_data: generatedSiteData,
+      custom_prompt: customPrompt || undefined,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -565,6 +600,30 @@ export const WebsiteCreatorPage: React.FC<WebsiteCreatorPageProps> = ({
               </div>
             </div>
 
+            {/* ✨ Personalização da IA (Opcional) */}
+            <div className="pt-3 border-t border-slate-200 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>✨ Personalização da IA</span>
+                </label>
+                <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                  Opcional
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-normal">
+                Descreva como você quer personalizar este site.
+              </p>
+              <textarea
+                ref={promptTextareaRef}
+                rows={4}
+                value={customPrompt}
+                onChange={(e) => setCustomPrompt(e.target.value)}
+                placeholder="Ex: Quero um site moderno e premium, com azul escuro e branco, destaque para os principais serviços e um botão de WhatsApp..."
+                className="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white resize-y leading-relaxed font-sans"
+              />
+            </div>
+
             <button
               type="submit"
               disabled={generating}
@@ -709,6 +768,47 @@ export const WebsiteCreatorPage: React.FC<WebsiteCreatorPageProps> = ({
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
                 </a>
+              </div>
+            </div>
+          )}
+
+          {/* Personalização utilizada Card */}
+          {generatedSiteData && !generating && (
+            <div className="mx-4 my-3 p-3.5 bg-gradient-to-r from-indigo-50/90 via-purple-50/60 to-emerald-50/70 border border-indigo-200/80 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-2xs">
+              <div className="space-y-1 min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                  <span className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+                    Personalização utilizada
+                  </span>
+                </div>
+                <p className="text-xs text-slate-700 bg-white/80 px-2.5 py-1.5 rounded-lg border border-indigo-100 font-medium line-clamp-2">
+                  {customPrompt.trim() ? customPrompt : 'Padrão inteligente adaptado ao nicho da empresa (sem personalização extra).'}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    promptTextareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    promptTextareaRef.current?.focus();
+                  }}
+                  className="px-3 py-1.5 text-xs font-semibold bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Editar prompt</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRegenerate}
+                  disabled={regenerating}
+                  className="px-3.5 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg shadow-2xs transition-colors flex items-center gap-1.5"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${regenerating ? 'animate-spin' : ''}`} />
+                  <span>{regenerating ? 'Regenerando...' : 'Regenerar site'}</span>
+                </button>
               </div>
             </div>
           )}

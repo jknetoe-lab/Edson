@@ -6,6 +6,7 @@ export interface WebsiteGenerationParams {
   description?: string;
   phone?: string;
   whatsapp?: string;
+  whatsapp_status?: 'confirmed' | 'unconfirmed' | 'none';
   address?: string;
   city?: string;
   state?: string;
@@ -17,6 +18,7 @@ export interface WebsiteGenerationParams {
   opening_hours?: string;
   desired_colors?: string;
   style?: string;
+  custom_prompt?: string;
 }
 
 export type NicheKey = 'barbearia' | 'restaurante' | 'dentista' | 'petshop' | 'academia' | 'loja' | 'padaria' | 'beleza' | 'mecanica' | 'advocacia' | 'contabilidade' | 'geral';
@@ -664,6 +666,9 @@ export const WebsiteGeneratorService = {
       }
     }
 
+    site.custom_prompt = params.custom_prompt;
+    site.whatsapp_status = params.whatsapp_status;
+
     return site;
   },
 
@@ -680,6 +685,40 @@ export const WebsiteGeneratorService = {
     const state = params.state || '';
     const nicheKey = detectNicheType(category, name);
     const theme = NICHE_THEMES[nicheKey];
+
+    // Personalização guiada pelo prompt do usuário (paleta, estilo e foco)
+    let finalPrimaryColor = theme.primary_color;
+    let finalSecondaryColor = theme.secondary_color;
+    let finalAccentColor = theme.accent_color;
+    let finalStyle = params.style || theme.style;
+
+    if (params.custom_prompt) {
+      const promptLower = params.custom_prompt.toLowerCase();
+      if (promptLower.includes('dourado') || promptLower.includes('ouro') || promptLower.includes('gold')) {
+        finalSecondaryColor = '#D4AF37';
+        finalAccentColor = '#B8860B';
+      }
+      if (promptLower.includes('preto') || promptLower.includes('black') || promptLower.includes('escuro') || promptLower.includes('dark')) {
+        finalPrimaryColor = '#0F172A';
+      }
+      if (promptLower.includes('azul') || promptLower.includes('blue')) {
+        finalPrimaryColor = '#0A192F';
+        finalSecondaryColor = '#3B82F6';
+      }
+      if (promptLower.includes('verde') || promptLower.includes('green')) {
+        finalPrimaryColor = '#064E3B';
+        finalSecondaryColor = '#10B981';
+      }
+      if (promptLower.includes('vinho') || promptLower.includes('vermelho')) {
+        finalPrimaryColor = '#4C0519';
+        finalSecondaryColor = '#E11D48';
+      }
+      if (promptLower.includes('sofisticado') || promptLower.includes('premium') || promptLower.includes('elegante')) {
+        finalStyle = 'Premium, Sofisticado & Elegante';
+      } else if (promptLower.includes('moderno') || promptLower.includes('clean')) {
+        finalStyle = 'Moderno, Minimalista & Clean';
+      }
+    }
 
     // Se serviços foram informados, usa-os estritamente. Não inventa serviços extravagantes.
     const rawServices = params.services ? params.services.split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -738,10 +777,12 @@ export const WebsiteGeneratorService = {
       google_maps_url: params.google_maps_url,
       rating: params.rating,
       review_count: params.review_count,
-      primary_color: theme.primary_color,
-      secondary_color: theme.secondary_color,
-      accent_color: theme.accent_color,
-      style: params.style || theme.style,
+      primary_color: finalPrimaryColor,
+      secondary_color: finalSecondaryColor,
+      accent_color: finalAccentColor,
+      style: finalStyle,
+      custom_prompt: params.custom_prompt,
+      whatsapp_status: params.whatsapp_status,
       seo: {
         meta_title: metaTitle,
         meta_description: metaDesc,

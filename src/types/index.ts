@@ -71,17 +71,20 @@ export interface UserProfile {
 }
 
 export type LeadStatus = 'Novo' | 'Contatado' | 'Em negociação' | 'Cliente' | 'Perdido';
+export type WhatsAppStatus = 'confirmed' | 'unconfirmed' | 'none';
 
 export interface Lead {
   id: string;
   user_id: string;
+  place_id?: string; // Real Google Place ID
   business_name: string;
   category: string;
   city: string;
   state: string;
   country: string;
-  phone: string;
+  phone?: string;
   whatsapp?: string;
+  whatsapp_status?: WhatsAppStatus;
   address: string;
   website?: string;
   google_maps_url?: string;
@@ -98,6 +101,9 @@ export type ProjectStatus = 'Rascunho' | 'Em edição' | 'Publicado';
 export interface GeneratedWebsiteData {
   business_name: string;
   category: string;
+  place_id?: string;
+  whatsapp_status?: WhatsAppStatus;
+  custom_prompt?: string;
   niche_type?: 'barbearia' | 'restaurante' | 'dentista' | 'petshop' | 'academia' | 'loja' | 'padaria' | 'beleza' | 'mecanica' | 'advocacia' | 'contabilidade' | 'geral';
   tagline: string;
   description: string;
@@ -182,6 +188,7 @@ export interface Project {
   id: string;
   user_id: string;
   lead_id?: string;
+  place_id?: string;
   name: string;
   slug?: string;
   custom_slug?: string;
@@ -189,6 +196,7 @@ export interface Project {
   status: ProjectStatus;
   website_url?: string;
   site_data: GeneratedWebsiteData;
+  custom_prompt?: string; // Personalização utilizada salva no projeto
   created_at: string;
   updated_at: string;
 }
@@ -218,12 +226,15 @@ export interface SearchLog {
 
 export interface BusinessSearchResult {
   id: string;
+  place_id: string; // Real Google Place ID
   name: string;
   category: string;
   city: string;
   state: string;
-  phone: string;
+  country: string;
+  phone?: string;
   whatsapp?: string;
+  whatsapp_status: WhatsAppStatus;
   address: string;
   rating: number;
   review_count: number;

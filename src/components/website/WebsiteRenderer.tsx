@@ -112,11 +112,19 @@ export const WebsiteRenderer: React.FC<WebsiteRendererProps> = ({ data, isIntera
     setFormMessage('');
   };
 
-  const whatsappClean = (data.whatsapp || data.phone || '').replace(/\D/g, '');
+  const isWhatsappVerified = Boolean(
+    data.whatsapp && 
+    (data.whatsapp_status === 'confirmed' || (!data.whatsapp_status && data.whatsapp.length >= 10))
+  );
+
+  const whatsappClean = isWhatsappVerified ? (data.whatsapp || '').replace(/\D/g, '') : '';
   const initialMessage = data.contact?.whatsapp_message || `Olá! Vim pelo site da ${data.business_name} e gostaria de mais informações.`;
   const whatsappUrl = whatsappClean
     ? `https://wa.me/${whatsappClean}?text=${encodeURIComponent(initialMessage)}`
-    : '#';
+    : '';
+
+  const phoneClean = (data.phone || '').replace(/\D/g, '');
+  const phoneCallUrl = phoneClean ? `tel:${phoneClean}` : '';
 
   const mapsUrl = data.google_maps_url || (data.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${data.business_name} ${data.address}`)}` : undefined);
 
@@ -314,15 +322,32 @@ export const WebsiteRenderer: React.FC<WebsiteRendererProps> = ({ data, isIntera
 
               {/* Hero CTAs */}
               <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3 pt-2">
-                <a
-                  href={whatsappUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-7 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-2xl shadow-lg hover:shadow-emerald-600/30 hover:-translate-y-0.5 active:translate-y-0 transition-all"
-                >
-                  <MessageSquare className="w-4 h-4 fill-white" />
-                  <span>{data.hero?.cta_primary || 'Falar pelo WhatsApp'}</span>
-                </a>
+                {isWhatsappVerified && whatsappUrl ? (
+                  <a
+                    href={whatsappUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-7 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-2xl shadow-lg hover:shadow-emerald-600/30 hover:-translate-y-0.5 active:translate-y-0 transition-all"
+                  >
+                    <MessageSquare className="w-4 h-4 fill-white" />
+                    <span>{data.hero?.cta_primary || 'Falar pelo WhatsApp'}</span>
+                  </a>
+                ) : phoneCallUrl ? (
+                  <a
+                    href={phoneCallUrl}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-7 py-3.5 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold rounded-2xl shadow-lg hover:-translate-y-0.5 active:translate-y-0 transition-all"
+                  >
+                    <Phone className="w-4 h-4" />
+                    <span>Ligar para a Empresa</span>
+                  </a>
+                ) : (
+                  <a
+                    href="#contato"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-7 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-2xl shadow-lg hover:shadow-emerald-600/30 hover:-translate-y-0.5 active:translate-y-0 transition-all"
+                  >
+                    <span>Falar Conosco</span>
+                  </a>
+                )}
 
                 <a
                   href="#servicos"
@@ -973,34 +998,65 @@ export const WebsiteRenderer: React.FC<WebsiteRendererProps> = ({ data, isIntera
             Pronto para transformar sua experiência com a {data.business_name}?
           </h2>
           <p className="text-sm sm:text-base text-emerald-100 max-w-xl mx-auto">
-            Fale agora com nossa equipe pelo WhatsApp oficial e garanta atendimento prioritário.
+            {isWhatsappVerified 
+              ? 'Fale agora com nossa equipe pelo WhatsApp oficial e garanta atendimento prioritário.' 
+              : 'Entre em contato com nossa equipe para tirar dúvidas ou solicitar atendimento.'}
           </p>
           <div className="pt-2">
-            <a
-              href={whatsappUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-8 py-4 bg-white hover:bg-slate-100 text-emerald-900 text-sm font-black rounded-2xl shadow-xl hover:scale-105 transition-all"
-            >
-              <MessageSquare className="w-5 h-5 fill-emerald-900" />
-              <span>{data.contact?.whatsapp_cta || 'Conversar pelo WhatsApp'}</span>
-            </a>
+            {isWhatsappVerified && whatsappUrl ? (
+              <a
+                href={whatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-8 py-4 bg-white hover:bg-slate-100 text-emerald-900 text-sm font-black rounded-2xl shadow-xl hover:scale-105 transition-all"
+              >
+                <MessageSquare className="w-5 h-5 fill-emerald-900" />
+                <span>{data.contact?.whatsapp_cta || 'Conversar pelo WhatsApp'}</span>
+              </a>
+            ) : phoneCallUrl ? (
+              <a
+                href={phoneCallUrl}
+                className="inline-flex items-center gap-2 px-8 py-4 bg-white hover:bg-slate-100 text-slate-900 text-sm font-black rounded-2xl shadow-xl hover:scale-105 transition-all"
+              >
+                <Phone className="w-5 h-5" />
+                <span>Ligar para {data.phone}</span>
+              </a>
+            ) : (
+              <a
+                href="#contato"
+                className="inline-flex items-center gap-2 px-8 py-4 bg-white hover:bg-slate-100 text-slate-900 text-sm font-black rounded-2xl shadow-xl hover:scale-105 transition-all"
+              >
+                <span>Solicitar Atendimento</span>
+              </a>
+            )}
           </div>
         </div>
       </section>
 
-      {/* 12. FLOATING WHATSAPP BUTTON */}
-      <aside aria-label="Atendimento WhatsApp" className="fixed bottom-5 right-5 z-40">
-        <a
-          href={whatsappUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-full shadow-2xl hover:scale-110 active:scale-95 transition-all group"
-        >
-          <MessageSquare className="w-5 h-5 fill-white animate-pulse" />
-          <span className="hidden sm:inline font-bold">Falar no WhatsApp</span>
-        </a>
-      </aside>
+      {/* 12. FLOATING CONTACT BUTTON */}
+      {isWhatsappVerified && whatsappUrl ? (
+        <aside aria-label="Atendimento WhatsApp" className="fixed bottom-5 right-5 z-40">
+          <a
+            href={whatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-full shadow-2xl hover:scale-110 active:scale-95 transition-all group"
+          >
+            <MessageSquare className="w-5 h-5 fill-white animate-pulse" />
+            <span className="hidden sm:inline font-bold">Falar no WhatsApp</span>
+          </a>
+        </aside>
+      ) : phoneCallUrl ? (
+        <aside aria-label="Atendimento Telefônico" className="fixed bottom-5 right-5 z-40">
+          <a
+            href={phoneCallUrl}
+            className="flex items-center gap-2 px-4 py-3 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-full shadow-2xl hover:scale-110 active:scale-95 transition-all group"
+          >
+            <Phone className="w-5 h-5" />
+            <span className="hidden sm:inline font-bold">Ligar para a empresa</span>
+          </a>
+        </aside>
+      ) : null}
 
       {/* 13. FOOTER */}
       <footer className="mt-auto bg-slate-950 text-slate-400 py-10 text-xs border-t border-slate-900">
