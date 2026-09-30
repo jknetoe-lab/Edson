@@ -344,12 +344,13 @@ Suas respostas devem ser práticas, em português brasileiro fluente, encorajado
         filter: filter as any,
       });
 
-      if (!searchResult.success || searchResult.results.length === 0) {
+      if (!searchResult.success) {
         return res.status(200).json({
           success: false,
           error: searchResult.error || 'Não foi possível consultar o Google Maps. Tente novamente.',
           results: [],
           source: searchResult.source,
+          diagnostic: searchResult.diagnostic,
         });
       }
 
@@ -357,6 +358,7 @@ Suas respostas devem ser práticas, em português brasileiro fluente, encorajado
         success: true,
         results: searchResult.results,
         source: searchResult.source,
+        diagnostic: searchResult.diagnostic,
         count: searchResult.results.length,
       });
     } catch (err: any) {

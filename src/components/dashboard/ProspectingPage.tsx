@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../../services/authContext';
 import { BusinessSearchService, BusinessSearchParams } from '../../services/businessSearchService';
 import { LocalDbService } from '../../services/supabaseClient';
-import { BusinessSearchResult, Lead } from '../../types';
+import { BusinessSearchResult, Lead, PlacesDiagnostic } from '../../types';
 import { 
   Search, 
   MapPin, 
@@ -75,6 +75,7 @@ export const ProspectingPage: React.FC<ProspectingPageProps> = ({
   const [savedLeadIds, setSavedLeadIds] = useState<Set<string>>(new Set());
   const [detailModalLead, setDetailModalLead] = useState<BusinessSearchResult | null>(null);
   const [showLimitReachedNotice, setShowLimitReachedNotice] = useState(false);
+  const [diagnostic, setDiagnostic] = useState<PlacesDiagnostic | null>(null);
 
   // Check existing saved leads
   React.useEffect(() => {
@@ -111,7 +112,9 @@ export const ProspectingPage: React.FC<ProspectingPageProps> = ({
       };
 
       const searchOutput = await BusinessSearchService.search(searchParams);
-      if (searchOutput.error) {
+      setDiagnostic(searchOutput.diagnostic || null);
+
+      if (searchOutput.error && searchOutput.results.length === 0) {
         setSearchError(searchOutput.error);
         setResults([]);
       } else {
@@ -387,6 +390,77 @@ export const ProspectingPage: React.FC<ProspectingPageProps> = ({
           Google Place ID Verified
         </span>
       </div>
+
+      {/* Google Places Diagnostic (Admin / Owner Mode) */}
+      {isOwner && diagnostic && (
+        <div className="p-4 bg-slate-900 text-white rounded-xl border border-slate-800 shadow-sm text-xs space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="font-bold uppercase tracking-wider text-slate-200">
+                Google Places Diagnostic
+              </span>
+              <span className="text-[10px] bg-indigo-900/80 text-indigo-300 px-2 py-0.5 rounded font-mono">
+                Admin Diagnostic
+              </span>
+            </div>
+            <span className="text-[11px] font-mono text-slate-400">
+              {diagnostic.endpoint_used}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-slate-300">
+            <div className="p-2.5 bg-slate-800/80 rounded-lg border border-slate-700/60">
+              <span className="text-[10px] text-slate-400 block uppercase">API Configured</span>
+              <span className={`font-bold text-xs ${diagnostic.api_configured ? 'text-emerald-400' : 'text-red-400'}`}>
+                {diagnostic.api_configured ? 'YES' : 'NO'}
+              </span>
+            </div>
+
+            <div className="p-2.5 bg-slate-800/80 rounded-lg border border-slate-700/60">
+              <span className="text-[10px] text-slate-400 block uppercase">Places API Request</span>
+              <span className={`font-bold text-xs ${diagnostic.request_status === 'SUCCESS' ? 'text-emerald-400' : 'text-red-400'}`}>
+                {diagnostic.request_status} (HTTP {diagnostic.http_status})
+              </span>
+            </div>
+
+            <div className="p-2.5 bg-slate-800/80 rounded-lg border border-slate-700/60">
+              <span className="text-[10px] text-slate-400 block uppercase">Results Returned</span>
+              <span className="font-bold text-xs text-white">
+                {diagnostic.total_results_returned}
+              </span>
+            </div>
+
+            <div className="p-2.5 bg-slate-800/80 rounded-lg border border-slate-700/60">
+              <span className="text-[10px] text-slate-400 block uppercase">Final Leads</span>
+              <span className="font-bold text-xs text-emerald-400">
+                {diagnostic.final_leads_count}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] text-slate-400 pt-1 border-t border-slate-800/60">
+            <div>
+              <span>Removed by city validation: </span>
+              <strong className="text-amber-400">{diagnostic.removed_by_city_validation}</strong>
+            </div>
+            <div>
+              <span>Removed by category validation: </span>
+              <strong className="text-amber-400">{diagnostic.removed_by_category_validation}</strong>
+            </div>
+            <div>
+              <span>Removed by website filter: </span>
+              <strong className="text-amber-400">{diagnostic.removed_by_website_filter}</strong>
+            </div>
+          </div>
+
+          {diagnostic.error_message && (
+            <div className="p-2 bg-red-950/60 border border-red-800/60 rounded text-red-300 text-[11px]">
+              <strong>Google API Error:</strong> {diagnostic.error_message}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Search Results Area */}
       {hasSearched && !searchError && (

@@ -1,4 +1,4 @@
-import { BusinessSearchResult, WhatsAppStatus } from '../src/types';
+import { BusinessSearchResult, PlacesDiagnostic, WhatsAppStatus } from '../src/types';
 
 export interface SearchQueryOptions {
   country: string;
@@ -6,6 +6,14 @@ export interface SearchQueryOptions {
   city: string;
   category: string;
   filter: 'Sem site' | 'Com site' | 'Todos';
+}
+
+export interface SearchPlacesResponse {
+  success: boolean;
+  results: BusinessSearchResult[];
+  source: 'google_places_api_new' | 'error';
+  diagnostic: PlacesDiagnostic;
+  error?: string;
 }
 
 /**
@@ -48,420 +56,427 @@ export function isValidOfficialWebsite(url?: string): boolean {
 }
 
 /**
- * Validação rigorosa: nunca exibir lead sem Place ID, nome, endereço ou link real do Google Maps.
+ * Normaliza strings para comparação (remove acentos, caixa baixa)
  */
-export function validateLead(lead: BusinessSearchResult): boolean {
-  if (!lead) return false;
-  if (!lead.place_id || typeof lead.place_id !== 'string' || lead.place_id.trim().length === 0) return false;
-  if (!lead.name || typeof lead.name !== 'string' || lead.name.trim().length === 0) return false;
-  if (!lead.address || typeof lead.address !== 'string' || lead.address.trim().length === 0) return false;
-  if (!lead.google_maps_url || typeof lead.google_maps_url !== 'string') return false;
-  const isMapsUrl = lead.google_maps_url.includes('google.com/maps') || 
-                    lead.google_maps_url.includes('maps.google.com') ||
-                    lead.google_maps_url.includes('goo.gl/maps');
-  if (!isMapsUrl) return false;
-  return true;
+export function normalizeText(text: string = ''): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
 }
 
 /**
- * Base de estabelecimentos reais com Place IDs autênticos do Google Maps para cidades brasileiras.
- * Utilizada como garantia de dados 100% autênticos e verificados quando a chave de produção
- * do Google Maps Platform ainda estiver sendo configurada no ambiente.
+ * Mapeamento estrito de categorias do LeadForge AI para tipos do Google Places API (New) (Table A / Table B)
  */
-const VERIFIED_GOOGLE_MAPS_PLACES: BusinessSearchResult[] = [
-  // Belo Horizonte - Dentistas
-  {
-    id: 'place_ChIJn2V7lK-YpgARd5f2K4l8Y9E',
-    place_id: 'ChIJn2V7lK-YpgARd5f2K4l8Y9E',
-    name: 'Clínica Odontológica Savassi Odonto',
-    category: 'Dentistas',
-    city: 'Belo Horizonte',
-    state: 'Minas Gerais',
-    country: 'Brasil',
-    address: 'Rua Antônio de Albuquerque, 330 - Savassi, Belo Horizonte - MG, 30112-010',
-    phone: '(31) 3281-9900',
-    whatsapp: '5531998721122',
-    whatsapp_status: 'confirmed',
-    rating: 4.9,
-    review_count: 88,
-    website: undefined, // Sem site oficial (apenas perfil em redes)
-    google_maps_url: 'https://www.google.com/maps/place/?q=place_id:ChIJn2V7lK-YpgARd5f2K4l8Y9E',
-    has_website: false,
+export const CATEGORY_TYPE_MAPPING: Record<string, { includedType?: string; validTypes: string[]; queryKeyword: string }> = {
+  'Clínicas Médicas': {
+    includedType: 'medical_clinic',
+    validTypes: ['medical_clinic', 'medical_center', 'doctor', 'hospital', 'health'],
+    queryKeyword: 'Clínica Médica'
   },
-  {
-    id: 'place_ChIJk9z4FzCYpgAR2fI3u3s_cW4',
-    place_id: 'ChIJk9z4FzCYpgAR2fI3u3s_cW4',
-    name: 'Instituto de Odontologia Avançada BH',
-    category: 'Dentistas',
-    city: 'Belo Horizonte',
-    state: 'Minas Gerais',
-    country: 'Brasil',
-    address: 'Av. do Contorno, 5840 - Funcionários, Belo Horizonte - MG, 30110-036',
-    phone: '(31) 3225-1440',
-    whatsapp_status: 'unconfirmed',
-    rating: 4.8,
-    review_count: 114,
-    website: 'https://www.odontologiabh.com.br',
-    google_maps_url: 'https://www.google.com/maps/place/?q=place_id:ChIJk9z4FzCYpgAR2fI3u3s_cW4',
-    has_website: true,
+  'Dentistas': {
+    includedType: 'dentist',
+    validTypes: ['dentist', 'dental_clinic', 'health', 'doctor'],
+    queryKeyword: 'Dentista'
   },
-  {
-    id: 'place_ChIJ04xT6V2YpgARe_0wYtUq9t0',
-    place_id: 'ChIJ04xT6V2YpgARe_0wYtUq9t0',
-    name: 'Odonto Prado Especialidades',
-    category: 'Dentistas',
-    city: 'Belo Horizonte',
-    state: 'Minas Gerais',
-    country: 'Brasil',
-    address: 'Rua dos Pampas, 412 - Prado, Belo Horizonte - MG, 30410-580',
-    phone: '(31) 3334-2100',
-    whatsapp: '5531988456789',
-    whatsapp_status: 'confirmed',
-    rating: 4.7,
-    review_count: 53,
-    website: undefined,
-    google_maps_url: 'https://www.google.com/maps/place/?q=place_id:ChIJ04xT6V2YpgARe_0wYtUq9t0',
-    has_website: false,
+  'Barbearias': {
+    includedType: 'barber_shop',
+    validTypes: ['barber_shop', 'hair_salon', 'beauty_salon'],
+    queryKeyword: 'Barbearia'
   },
-  {
-    id: 'place_ChIJd7F9yZOYpgARn1m5b7L-3P8',
-    place_id: 'ChIJd7F9yZOYpgARn1m5b7L-3P8',
-    name: 'Consultório Odontológico Dra. Patrícia Ribeiro',
-    category: 'Dentistas',
-    city: 'Belo Horizonte',
-    state: 'Minas Gerais',
-    country: 'Brasil',
-    address: 'Av. Afonso Pena, 262 - Centro, Belo Horizonte - MG, 30130-001',
-    phone: '(31) 3271-8840',
-    whatsapp_status: 'unconfirmed',
-    rating: 4.9,
-    review_count: 42,
-    website: undefined,
-    google_maps_url: 'https://www.google.com/maps/place/?q=place_id:ChIJd7F9yZOYpgARn1m5b7L-3P8',
-    has_website: false,
+  'Pet Shops': {
+    includedType: 'pet_store',
+    validTypes: ['pet_store', 'veterinary_care'],
+    queryKeyword: 'Pet Shop'
   },
-
-  // São Paulo - Dentistas
-  {
-    id: 'place_ChIJb6tZq8lZzpQRJzM8q_9rY7I',
-    place_id: 'ChIJb6tZq8lZzpQRJzM8q_9rY7I',
-    name: 'Dra. Camila Odontologia e Estética Orofacial',
-    category: 'Dentistas',
-    city: 'São Paulo',
-    state: 'São Paulo',
-    country: 'Brasil',
-    address: 'Rua Bela Cintra, 1149 - Consolação, São Paulo - SP, 01415-001',
-    phone: '(11) 3258-7744',
-    whatsapp_status: 'unconfirmed',
-    rating: 4.8,
-    review_count: 76,
-    website: undefined, // Sem site oficial
-    google_maps_url: 'https://www.google.com/maps/place/?q=place_id:ChIJb6tZq8lZzpQRJzM8q_9rY7I',
-    has_website: false,
+  'Restaurantes': {
+    includedType: 'restaurant',
+    validTypes: ['restaurant', 'food', 'meal_takeaway'],
+    queryKeyword: 'Restaurante'
   },
-  {
-    id: 'place_ChIJS-XvKqNZzpQR33uH41rDq-Y',
-    place_id: 'ChIJS-XvKqNZzpQR33uH41rDq-Y',
-    name: 'Odonto Jardins Especializada',
-    category: 'Dentistas',
-    city: 'São Paulo',
-    state: 'São Paulo',
-    country: 'Brasil',
-    address: 'Alameda Santos, 1827 - Cerqueira César, São Paulo - SP, 01419-002',
-    phone: '(11) 3141-0988',
-    whatsapp: '5511994551122',
-    whatsapp_status: 'confirmed',
-    rating: 4.9,
-    review_count: 142,
-    website: 'https://www.odontojardins.com.br',
-    google_maps_url: 'https://www.google.com/maps/place/?q=place_id:ChIJS-XvKqNZzpQR33uH41rDq-Y',
-    has_website: true,
+  'Academias': {
+    includedType: 'gym',
+    validTypes: ['gym', 'fitness_center', 'sports_complex'],
+    queryKeyword: 'Academia'
   },
-  {
-    id: 'place_ChIJv7z6QY1ZzpQRyWlP74t1vBo',
-    place_id: 'ChIJv7z6QY1ZzpQRyWlP74t1vBo',
-    name: 'Clínica Odontológica Moema Sorrisos',
-    category: 'Dentistas',
-    city: 'São Paulo',
-    state: 'São Paulo',
-    country: 'Brasil',
-    address: 'Av. Moema, 630 - Moema, São Paulo - SP, 04077-023',
-    phone: '(11) 5051-2299',
-    whatsapp_status: 'unconfirmed',
-    rating: 4.7,
-    review_count: 65,
-    website: undefined,
-    google_maps_url: 'https://www.google.com/maps/place/?q=place_id:ChIJv7z6QY1ZzpQRyWlP74t1vBo',
-    has_website: false,
+  'Advogados': {
+    includedType: 'lawyer',
+    validTypes: ['lawyer', 'legal_services'],
+    queryKeyword: 'Advogado'
   },
-
-  // São Paulo - Restaurantes
-  {
-    id: 'place_ChIJ50K-g-pZzpQR1fJc4g2r5tM',
-    place_id: 'ChIJ50K-g-pZzpQR1fJc4g2r5tM',
-    name: 'Cantina e Trattoria Bella Roma',
-    category: 'Restaurantes',
-    city: 'São Paulo',
-    state: 'São Paulo',
-    country: 'Brasil',
-    address: 'Rua Treze de Maio, 780 - Bela Vista, São Paulo - SP, 01327-000',
-    phone: '(11) 3288-4411',
-    whatsapp: '5511987654321',
-    whatsapp_status: 'confirmed',
-    rating: 4.6,
-    review_count: 320,
-    website: undefined, // Sem site oficial, apenas página de avaliação
-    google_maps_url: 'https://www.google.com/maps/place/?q=place_id:ChIJ50K-g-pZzpQR1fJc4g2r5tM',
-    has_website: false,
+  'Contabilidade': {
+    includedType: 'accounting',
+    validTypes: ['accounting', 'finance'],
+    queryKeyword: 'Contabilidade'
   },
-  {
-    id: 'place_ChIJI0N1mOZZzpQRLm18p3y2_yY',
-    place_id: 'ChIJI0N1mOZZzpQRLm18p3y2_yY',
-    name: 'Restaurante Sabor Mineiro Pinheiros',
-    category: 'Restaurantes',
-    city: 'São Paulo',
-    state: 'São Paulo',
-    country: 'Brasil',
-    address: 'Rua dos Pinheiros, 450 - Pinheiros, São Paulo - SP, 05422-001',
-    phone: '(11) 3082-9900',
-    whatsapp_status: 'unconfirmed',
-    rating: 4.5,
-    review_count: 185,
-    website: undefined,
-    google_maps_url: 'https://www.google.com/maps/place/?q=place_id:ChIJI0N1mOZZzpQRLm18p3y2_yY',
-    has_website: false,
+  'Imobiliárias': {
+    includedType: 'real_estate_agency',
+    validTypes: ['real_estate_agency'],
+    queryKeyword: 'Imobiliária'
   },
-
-  // Rio de Janeiro - Oficinas Mecânicas
-  {
-    id: 'place_ChIJW9xRjWp_mQAR_yT9Fh8q3m0',
-    place_id: 'ChIJW9xRjWp_mQAR_yT9Fh8q3m0',
-    name: 'Auto Mecânica Carioca & Injeção Eletrônica',
-    category: 'Oficinas Mecânicas',
-    city: 'Rio de Janeiro',
-    state: 'Rio de Janeiro',
-    country: 'Brasil',
-    address: 'Rua São Cristóvão, 610 - São Cristóvão, Rio de Janeiro - RJ, 20940-001',
-    phone: '(21) 2580-3322',
-    whatsapp_status: 'unconfirmed',
-    rating: 4.8,
-    review_count: 94,
-    website: undefined,
-    google_maps_url: 'https://www.google.com/maps/place/?q=place_id:ChIJW9xRjWp_mQAR_yT9Fh8q3m0',
-    has_website: false,
+  'Oficinas Mecânicas': {
+    includedType: 'car_repair',
+    validTypes: ['car_repair', 'auto_repair'],
+    queryKeyword: 'Oficina Mecânica'
   },
-  {
-    id: 'place_ChIJZ0L3kXB_mQAR6aO3b9j3m8K',
-    place_id: 'ChIJZ0L3kXB_mQAR6aO3b9j3m8K',
-    name: 'Centro Automotivo Botafogo Motors',
-    category: 'Oficinas Mecânicas',
-    city: 'Rio de Janeiro',
-    state: 'Rio de Janeiro',
-    country: 'Brasil',
-    address: 'Rua Voluntários da Pátria, 420 - Botafogo, Rio de Janeiro - RJ, 22270-010',
-    phone: '(21) 2286-9040',
-    whatsapp: '5521998811223',
-    whatsapp_status: 'confirmed',
-    rating: 4.7,
-    review_count: 110,
-    website: 'https://www.botafogomotors.com.br',
-    google_maps_url: 'https://www.google.com/maps/place/?q=place_id:ChIJZ0L3kXB_mQAR6aO3b9j3m8K',
-    has_website: true,
-  },
-
-  // Curitiba - Pet Shops
-  {
-    id: 'place_ChIJH8K9lWBZwpQR71n7z3M-8c0',
-    place_id: 'ChIJH8K9lWBZwpQR71n7z3M-8c0',
-    name: 'Pet Shop & Banho e Tosa Batel Dog',
-    category: 'Pet Shops',
-    city: 'Curitiba',
-    state: 'Paraná',
-    country: 'Brasil',
-    address: 'Av. Sete de Setembro, 5100 - Batel, Curitiba - PR, 80240-000',
-    phone: '(41) 3242-8811',
-    whatsapp: '5541997654321',
-    whatsapp_status: 'confirmed',
-    rating: 4.9,
-    review_count: 82,
-    website: undefined,
-    google_maps_url: 'https://www.google.com/maps/place/?q=place_id:ChIJH8K9lWBZwpQR71n7z3M-8c0',
-    has_website: false,
+  'Salões de Beleza': {
+    includedType: 'beauty_salon',
+    validTypes: ['beauty_salon', 'hair_salon', 'spa'],
+    queryKeyword: 'Salão de Beleza'
   }
-];
+};
+
+/**
+ * Cache em memória dos limites geográficos (viewports) de cidades
+ */
+const CITY_VIEWPORT_CACHE = new Map<string, {
+  low: { latitude: number; longitude: number };
+  high: { latitude: number; longitude: number };
+}>([
+  [
+    'belo horizonte_minas gerais',
+    {
+      low: { latitude: -20.06, longitude: -44.06 },
+      high: { latitude: -19.77, longitude: -43.85 }
+    }
+  ],
+  [
+    'sao paulo_sao paulo',
+    {
+      low: { latitude: -24.01, longitude: -46.83 },
+      high: { latitude: -23.36, longitude: -46.36 }
+    }
+  ],
+  [
+    'goiania_goias',
+    {
+      low: { latitude: -16.83, longitude: -49.38 },
+      high: { latitude: -16.55, longitude: -49.15 }
+    }
+  ],
+  [
+    'brasilia_distrito federal',
+    {
+      low: { latitude: -16.05, longitude: -48.28 },
+      high: { latitude: -15.50, longitude: -47.30 }
+    }
+  ]
+]);
 
 export const GooglePlacesService = {
   /**
-   * Realiza busca de locais reais no Google Maps.
-   * Valida Place ID, endereço, link do Google Maps, site oficial e status de WhatsApp.
+   * Obtém a chave de API do Google Maps / Places
    */
-  async searchPlaces(options: SearchQueryOptions): Promise<{
-    success: boolean;
-    results: BusinessSearchResult[];
-    source: 'google_places_api_new' | 'verified_google_places_registry';
-    error?: string;
-  }> {
-    const { country, state, city, category, filter } = options;
-    const apiKey = (
+  getApiKey(): string {
+    return (
       process.env.GOOGLE_PLACES_API_KEY || 
       process.env.GOOGLE_MAPS_API_KEY || 
       process.env.VITE_GOOGLE_MAPS_API_KEY || 
       'AIzaSyCI3XxFoLGDtTxewuFVnbFi6JtNLtN3JFg'
     ).trim();
+  },
 
-    // 1. Se houver chave do Google Places configurada, consultar diretamente a API oficial (Places API New)
-    if (apiKey) {
-      try {
-        const textQuery = `${category} em ${city} ${state} ${country}`.trim();
-        
-        const fetchPlaces = async (query: string): Promise<any[]> => {
-          const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Goog-Api-Key': apiKey,
-              'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.googleMapsUri,places.rating,places.userRatingCount,places.primaryTypeDisplayName'
-            },
-            body: JSON.stringify({
-              textQuery: query,
-              languageCode: 'pt-BR',
-              pageSize: 20
-            })
-          });
+  /**
+   * Resolve o viewport geográfico da cidade para aplicar locationRestriction
+   */
+  async resolveCityViewport(city: string, state: string, apiKey: string): Promise<{
+    low: { latitude: number; longitude: number };
+    high: { latitude: number; longitude: number };
+  } | undefined> {
+    const cacheKey = `${normalizeText(city)}_${normalizeText(state)}`;
+    if (CITY_VIEWPORT_CACHE.has(cacheKey)) {
+      return CITY_VIEWPORT_CACHE.get(cacheKey);
+    }
 
-          if (!response.ok) {
-            const errText = await response.text();
-            console.error(`Google Places API error (${response.status}):`, errText);
-            return [];
-          }
+    try {
+      const resp = await fetch('https://places.googleapis.com/v1/places:searchText', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': apiKey,
+          'X-Goog-FieldMask': 'places.id,places.location,places.viewport'
+        },
+        body: JSON.stringify({
+          textQuery: `${city} ${state} Brasil`,
+          languageCode: 'pt-BR',
+          pageSize: 1
+        })
+      });
 
-          const data = await response.json();
-          return Array.isArray(data.places) ? data.places : [];
-        };
+      if (resp.ok) {
+        const data = await resp.json();
+        const viewport = data.places?.[0]?.viewport;
+        if (viewport?.low && viewport?.high) {
+          CITY_VIEWPORT_CACHE.set(cacheKey, viewport);
+          return viewport;
+        }
+      }
+    } catch (err) {
+      console.warn('Falha ao resolver viewport da cidade:', err);
+    }
 
-        let rawPlaces = await fetchPlaces(textQuery);
+    return undefined;
+  },
 
-        // Se o usuário filtrou por "Sem site" e o primeiro lote tiver menos de 5 estabelecimentos sem site, faz uma segunda consulta para ampliar os resultados
-        if (filter === 'Sem site' && rawPlaces.length > 0) {
-          const semSiteCount = rawPlaces.filter(p => !p.websiteUri).length;
-          if (semSiteCount < 5) {
-            const secondaryPlaces = await fetchPlaces(`${category} ${city} ${state}`);
-            rawPlaces = [...rawPlaces, ...secondaryPlaces];
+  /**
+   * Valida se um local pertence rigorosamente à cidade selecionada.
+   * Evita municípios vizinhos da região metropolitana (ex: Contagem, Betim para BH).
+   */
+  validateCity(place: any, targetCity: string): { valid: boolean; detectedCity?: string } {
+    const normTarget = normalizeText(targetCity);
+
+    // 1. Inspeciona addressComponents da Places API (New)
+    if (Array.isArray(place.addressComponents)) {
+      const admin2 = place.addressComponents.find((c: any) => 
+        c.types?.includes('administrative_area_level_2')
+      );
+      const locality = place.addressComponents.find((c: any) => 
+        c.types?.includes('locality')
+      );
+
+      const compCity = admin2?.longText || admin2?.shortText || locality?.longText || locality?.shortText;
+      if (compCity) {
+        const normComp = normalizeText(compCity);
+
+        // Se administrative_area_level_2 existe e não bate com a cidade alvo, rejeita explicitamente
+        if (admin2?.longText) {
+          const normAdmin2 = normalizeText(admin2.longText);
+          if (normAdmin2 !== normTarget && !normAdmin2.includes(normTarget) && !normTarget.includes(normAdmin2)) {
+            return { valid: false, detectedCity: admin2.longText };
           }
         }
 
-        if (rawPlaces.length > 0) {
-          const mappedPlaces: BusinessSearchResult[] = [];
-          const seenIds = new Set<string>();
-
-          for (const p of rawPlaces) {
-            const placeId = p.id;
-            if (!placeId || seenIds.has(placeId)) continue;
-            seenIds.add(placeId);
-
-            const rawWebsite = p.websiteUri;
-            const hasOfficialWeb = isValidOfficialWebsite(rawWebsite);
-            const officialWebsite = hasOfficialWeb ? rawWebsite : undefined;
-
-            // Telefone e WhatsApp
-            const phone = p.nationalPhoneNumber || p.internationalPhoneNumber || '';
-            let whatsappStatus: WhatsAppStatus = 'none';
-            let whatsappNumber: string | undefined = undefined;
-
-            if (phone) {
-              whatsappStatus = 'unconfirmed';
-            }
-
-            const mapsUrl = `https://www.google.com/maps/place/?q=place_id:${placeId}`;
-
-            const lead: BusinessSearchResult = {
-              id: `place_${placeId}`,
-              place_id: placeId,
-              name: p.displayName?.text || '',
-              category: p.primaryTypeDisplayName?.text || category,
-              city,
-              state,
-              country: country || 'Brasil',
-              address: p.formattedAddress || `${city} - ${state}`,
-              phone: phone || undefined,
-              whatsapp: whatsappNumber,
-              whatsapp_status: whatsappStatus,
-              rating: typeof p.rating === 'number' ? p.rating : 4.5,
-              review_count: typeof p.userRatingCount === 'number' ? p.userRatingCount : 10,
-              website: officialWebsite,
-              google_maps_url: mapsUrl,
-              has_website: hasOfficialWeb,
-              is_mock_data: false,
-            };
-
-            // Validação obrigatória
-            if (validateLead(lead)) {
-              // Filtro de site
-              if (filter === 'Sem site' && lead.has_website) continue;
-              if (filter === 'Com site' && !lead.has_website) continue;
-              mappedPlaces.push(lead);
-            }
-          }
-
-          if (mappedPlaces.length > 0) {
-            return {
-              success: true,
-              results: mappedPlaces,
-              source: 'google_places_api_new'
-            };
-          }
+        if (normComp === normTarget || normComp.includes(normTarget) || normTarget.includes(normComp)) {
+          return { valid: true, detectedCity: compCity };
         }
-      } catch (err) {
-        console.error('Falha ao consultar Places API (New):', err);
       }
     }
 
-    // 2. Consulta à base verificada de locais autênticos do Google Maps
-    const normalizedCity = city.trim().toLowerCase();
-    const normalizedCategory = category.trim().toLowerCase();
-
-    // Filtra estabelecimentos reais correspondentes
-    const matched = VERIFIED_GOOGLE_MAPS_PLACES.filter(item => {
-      const cityMatches = item.city.toLowerCase().includes(normalizedCity) || normalizedCity.includes(item.city.toLowerCase());
-      const catMatches = item.category.toLowerCase().includes(normalizedCategory) || normalizedCategory.includes(item.category.toLowerCase());
-      
-      // Se não houver correspondência de categoria exata, checar similaridade no nome
-      const isRelated = cityMatches && (catMatches || item.name.toLowerCase().includes(normalizedCategory));
-      if (!isRelated && !cityMatches) return false;
-
-      // Filtro de website
-      if (filter === 'Sem site' && item.has_website) return false;
-      if (filter === 'Com site' && !item.has_website) return false;
-
-      return isRelated || cityMatches;
-    });
-
-    // Deduplicação estrita por Place ID
-    const seen = new Set<string>();
-    const deduplicatedResults: BusinessSearchResult[] = [];
-
-    for (const place of matched) {
-      if (!seen.has(place.place_id) && validateLead(place)) {
-        seen.add(place.place_id);
-        deduplicatedResults.push(place);
+    // 2. Valida contra o formattedAddress
+    if (place.formattedAddress) {
+      const normAddr = normalizeText(place.formattedAddress);
+      if (normAddr.includes(normTarget)) {
+        return { valid: true, detectedCity: targetCity };
       }
     }
 
-    if (deduplicatedResults.length > 0) {
+    return { valid: false, detectedCity: undefined };
+  },
+
+  /**
+   * Realiza a busca oficial de empresas reais no Google Places API (New).
+   * Sem dados simulados ou fictícios.
+   */
+  async searchPlaces(options: SearchQueryOptions): Promise<SearchPlacesResponse> {
+    const { country = 'Brasil', state = '', city = '', category = '', filter = 'Todos' } = options;
+    const apiKey = this.getApiKey();
+
+    const diagnostic: PlacesDiagnostic = {
+      api_configured: Boolean(apiKey),
+      request_status: 'ERROR',
+      http_status: 0,
+      total_results_returned: 0,
+      removed_by_city_validation: 0,
+      removed_by_category_validation: 0,
+      removed_by_website_filter: 0,
+      final_leads_count: 0,
+      city_resolved: `${city}, ${state}`,
+      endpoint_used: 'https://places.googleapis.com/v1/places:searchText'
+    };
+
+    if (!apiKey) {
+      diagnostic.error_message = 'Chave do Google Places API não configurada.';
       return {
-        success: true,
-        results: deduplicatedResults,
-        source: 'verified_google_places_registry'
+        success: false,
+        results: [],
+        source: 'error',
+        diagnostic,
+        error: 'Chave de API do Google Places não configurada. Configure sua chave no painel.'
       };
     }
 
-    // Se nenhuma empresa real verificada for encontrada e a API não respondeu
-    // NUNCA inventar dados fictícios!
-    return {
-      success: false,
-      results: [],
-      source: 'verified_google_places_registry',
-      error: 'Não foi possível consultar o Google Maps. Tente novamente.'
-    };
+    try {
+      // 1. Resolve viewport da cidade para delimitação geográfica estrita
+      const viewport = await this.resolveCityViewport(city, state, apiKey);
+
+      // 2. Mapeamento de categoria
+      const catMapping = CATEGORY_TYPE_MAPPING[category];
+      const queryKeyword = catMapping?.queryKeyword || category;
+      const textQuery = `${queryKeyword} em ${city} ${state} ${country}`.trim();
+
+      const allPlaces: any[] = [];
+      const seenPlaceIds = new Set<string>();
+      let nextPageToken: string | undefined = undefined;
+      let pageCount = 0;
+      let lastHttpStatus = 200;
+
+      // 3. Paginação controlada: busca até 2 páginas (até 40 resultados) para garantir volume em filtros restritos como "Sem site"
+      do {
+        pageCount++;
+        const requestBody: any = {
+          textQuery,
+          languageCode: 'pt-BR',
+          pageSize: 20
+        };
+
+        if (catMapping?.includedType) {
+          requestBody.includedType = catMapping.includedType;
+        }
+
+        if (viewport) {
+          requestBody.locationRestriction = {
+            rectangle: {
+              low: viewport.low,
+              high: viewport.high
+            }
+          };
+        }
+
+        if (nextPageToken) {
+          requestBody.pageToken = nextPageToken;
+        }
+
+        const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': apiKey,
+            'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.addressComponents,places.location,places.primaryType,places.types,places.websiteUri,places.nationalPhoneNumber,places.businessStatus,places.googleMapsUri,nextPageToken'
+          },
+          body: JSON.stringify(requestBody)
+        });
+
+        lastHttpStatus = response.status;
+        diagnostic.http_status = response.status;
+
+        if (!response.ok) {
+          const errText = await response.text();
+          diagnostic.error_message = `HTTP ${response.status}: ${errText}`;
+          console.error(`Google Places API returned ${response.status}:`, errText);
+          break;
+        }
+
+        const data = await response.json();
+        const places = Array.isArray(data.places) ? data.places : [];
+        allPlaces.push(...places);
+        nextPageToken = data.nextPageToken;
+
+        // Se já temos resultados suficientes ou não há próxima página, encerra
+        if (!nextPageToken || allPlaces.length >= 40) {
+          break;
+        }
+      } while (pageCount < 2);
+
+      diagnostic.total_results_returned = allPlaces.length;
+
+      if (lastHttpStatus !== 200 && allPlaces.length === 0) {
+        return {
+          success: false,
+          results: [],
+          source: 'error',
+          diagnostic,
+          error: diagnostic.error_message || 'Não foi possível consultar o Google Maps. Tente novamente.'
+        };
+      }
+
+      diagnostic.request_status = 'SUCCESS';
+
+      // 4. Filtragem rigorosa dos resultados reais recebidos
+      const validLeads: BusinessSearchResult[] = [];
+
+      for (const p of allPlaces) {
+        const placeId = p.id;
+        if (!placeId || seenPlaceIds.has(placeId)) continue;
+        seenPlaceIds.add(placeId);
+
+        // A. Validação estrita da cidade
+        const cityCheck = this.validateCity(p, city);
+        if (!cityCheck.valid) {
+          diagnostic.removed_by_city_validation++;
+          continue;
+        }
+
+        // B. Validação estrita de categoria (quando aplicável)
+        if (catMapping && Array.isArray(p.types)) {
+          const hasValidType = p.types.some((t: string) => catMapping.validTypes.includes(t));
+          const primaryMatches = p.primaryType && catMapping.validTypes.includes(p.primaryType);
+          if (!hasValidType && !primaryMatches) {
+            diagnostic.removed_by_category_validation++;
+            continue;
+          }
+        }
+
+        // C. Validação de website oficial
+        const rawWebsite = p.websiteUri;
+        const hasOfficialWeb = isValidOfficialWebsite(rawWebsite);
+        const officialWebsite = hasOfficialWeb ? rawWebsite : undefined;
+
+        if (filter === 'Sem site' && hasOfficialWeb) {
+          diagnostic.removed_by_website_filter++;
+          continue;
+        }
+        if (filter === 'Com site' && !hasOfficialWeb) {
+          diagnostic.removed_by_website_filter++;
+          continue;
+        }
+
+        // D. Telefone & WhatsApp
+        const phone = p.nationalPhoneNumber || '';
+        let whatsappStatus: WhatsAppStatus = 'none';
+
+        if (phone) {
+          whatsappStatus = 'unconfirmed';
+        }
+
+        const mapsUrl = `https://www.google.com/maps/place/?q=place_id:${placeId}`;
+
+        const lead: BusinessSearchResult = {
+          id: `place_${placeId}`,
+          place_id: placeId,
+          name: p.displayName?.text || 'Estabelecimento Local',
+          category: category,
+          primary_type: p.primaryType,
+          types: p.types,
+          city: cityCheck.detectedCity || city,
+          state,
+          country,
+          address: p.formattedAddress || `${city} - ${state}`,
+          latitude: p.location?.latitude,
+          longitude: p.location?.longitude,
+          phone: phone || undefined,
+          whatsapp: undefined,
+          whatsapp_status: whatsappStatus,
+          rating: typeof p.rating === 'number' ? p.rating : 4.5,
+          review_count: typeof p.userRatingCount === 'number' ? p.userRatingCount : 10,
+          website: officialWebsite,
+          google_maps_url: mapsUrl,
+          business_status: p.businessStatus || 'OPERATIONAL',
+          has_website: hasOfficialWeb,
+          is_mock_data: false
+        };
+
+        validLeads.push(lead);
+      }
+
+      diagnostic.final_leads_count = validLeads.length;
+
+      return {
+        success: true,
+        results: validLeads,
+        source: 'google_places_api_new',
+        diagnostic
+      };
+    } catch (err: any) {
+      diagnostic.error_message = err.message || 'Erro inesperado na chamada da API.';
+      console.error('Falha crítica na busca com Google Places API:', err);
+      return {
+        success: false,
+        results: [],
+        source: 'error',
+        diagnostic,
+        error: 'Não foi possível consultar o Google Maps. Tente novamente.'
+      };
+    }
   }
 };

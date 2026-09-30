@@ -229,19 +229,38 @@ export interface BusinessSearchResult {
   place_id: string; // Real Google Place ID
   name: string;
   category: string;
+  primary_type?: string;
+  types?: string[];
   city: string;
   state: string;
   country: string;
+  address: string;
+  latitude?: number;
+  longitude?: number;
   phone?: string;
   whatsapp?: string;
   whatsapp_status: WhatsAppStatus;
-  address: string;
   rating: number;
   review_count: number;
   website?: string;
   google_maps_url: string;
+  business_status?: string;
   has_website: boolean;
   is_mock_data?: boolean;
+}
+
+export interface PlacesDiagnostic {
+  api_configured: boolean;
+  request_status: 'SUCCESS' | 'ERROR';
+  http_status: number;
+  error_message?: string;
+  total_results_returned: number;
+  removed_by_city_validation: number;
+  removed_by_category_validation: number;
+  removed_by_website_filter: number;
+  final_leads_count: number;
+  city_resolved?: string;
+  endpoint_used: string;
 }
 
 export interface PricingInputs {

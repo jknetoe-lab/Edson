@@ -1,4 +1,4 @@
-import { BusinessSearchResult } from '../types';
+import { BusinessSearchResult, PlacesDiagnostic } from '../types';
 
 export interface BusinessSearchParams {
   country: string;
@@ -6,6 +6,13 @@ export interface BusinessSearchParams {
   city: string;
   category: string;
   filter: 'Sem site' | 'Com site' | 'Todos';
+}
+
+export interface BusinessSearchResultOutput {
+  results: BusinessSearchResult[];
+  source: string;
+  diagnostic?: PlacesDiagnostic;
+  error?: string;
 }
 
 /**
@@ -31,11 +38,7 @@ export const BusinessSearchService = {
    * Executa busca de estabelecimentos reais no Google Maps / Places API.
    * Não gera dados fictícios.
    */
-  async search(params: BusinessSearchParams): Promise<{
-    results: BusinessSearchResult[];
-    source: string;
-    error?: string;
-  }> {
+  async search(params: BusinessSearchParams): Promise<BusinessSearchResultOutput> {
     try {
       const response = await fetch('/api/search/businesses', {
         method: 'POST',
@@ -46,7 +49,7 @@ export const BusinessSearchService = {
       if (response.ok) {
         const data = await response.json();
         
-        if (data.success && Array.isArray(data.results) && data.results.length > 0) {
+        if (data.success && Array.isArray(data.results)) {
           // 1. Validação estrita: cada lead deve ter Place ID, Nome, Endereço e Google Maps link
           const validLeads = data.results.filter(validateLeadItem);
 
@@ -61,18 +64,19 @@ export const BusinessSearchService = {
             }
           }
 
-          if (deduplicated.length > 0) {
-            return {
-              results: deduplicated,
-              source: data.source || 'google_places_api_new',
-            };
-          }
+          return {
+            results: deduplicated,
+            source: data.source || 'google_places_api_new',
+            diagnostic: data.diagnostic,
+            error: deduplicated.length === 0 ? 'Nenhum estabelecimento encontrado para estes critérios.' : undefined
+          };
         }
 
-        // Se a resposta retornou erro ou 0 resultados
+        // Se a resposta retornou erro
         return {
           results: [],
           source: data.source || 'google_places',
+          diagnostic: data.diagnostic,
           error: data.error || 'Não foi possível consultar o Google Maps. Tente novamente.'
         };
       } else {
@@ -80,6 +84,7 @@ export const BusinessSearchService = {
         return {
           results: [],
           source: 'error',
+          diagnostic: errData.diagnostic,
           error: errData.error || 'Não foi possível consultar o Google Maps. Tente novamente.'
         };
       }
